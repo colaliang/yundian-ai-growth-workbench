@@ -10,3 +10,4 @@ customer-data/
 *.tmp
 .DS_Store
 Thumbs.db
+node_modules/

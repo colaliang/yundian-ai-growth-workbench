@@ -1,0 +1,18 @@
+{
+  "workspace.json": "{\n  \"schemaVersion\": 3,\n  \"workspaceId\": \"\",\n  \"host\": \"workbuddy\",\n  \"projectRoot\": \"\",\n  \"nativeBinding\": {\n    \"status\": \"pending\",\n    \"projectRef\": null,\n    \"spaceRef\": null\n  },\n  \"knowledgeStatus\": \"needs-input\",\n  \"goals\": [],\n  \"modules\": [],\n  \"connectors\": [],\n  \"coreDirection\": \"customer-acquisition\",\n  \"stages\": [\n    \"market-research\",\n    \"product-opportunity\",\n    \"site-and-content\",\n    \"seo-geo\",\n    \"content-operations\",\n    \"acquisition\",\n    \"buyer-check\",\n    \"sales-feedback\",\n    \"next-cycle\"\n  ],\n  \"currentStage\": null,\n  \"cycles\": []\n}\n",
+  "knowledge/00-index.md": "# 知识库索引\n\n状态：待客户提供资料；原生项目资料库关联待验证。\n\n记录每份资料的路径、来源、日期、审核状态和适用工作。\n",
+  "knowledge/analytics.md": "# 统计：指标定义、时间窗、来源和真实值；未知不填0\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/brand-profile.md": "# 品牌档案：组织与品牌ID、定位、语言、语气、视觉、可证实差异点与禁止表述\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/buyer-personas.md": "# 买家画像：市场、采购角色、需求、异议与决策路径\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/crm-and-leads.md": "# CRM/线索：系统引用、leadId、来源、阶段、负责人和实际反馈\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/goals-and-markets.md": "# 目标与客户\n\n待补充：工作目标、市场、客户画像、约束、预算与验收标准。\n",
+  "knowledge/growth-actions.md": "# 增长工作：cycleId、任务、产物、验收、结果与下一轮依据\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/organization.md": "# 企业主体：法定/贸易名称、类型、地区、业务、授权负责人、网站与来源\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/products.md": "# 产品/服务：所属品牌、参数、卖点、MOQ、资质、交期及证据\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/profile.md": "# 主体与品牌\n\n待补充：主体、品牌、业务、产品/服务、网站、品牌语气、禁止事项。\n",
+  "knowledge/social-channels.md": "# 社媒：账号引用、受众、语气与实际授权状态，不存凭据\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/sources-config.json": "{\n  \"storageMode\": \"local-first\",\n  \"primary\": \"workbuddy-project-files\",\n  \"externalSources\": []\n}\n",
+  "knowledge/sources.csv": "id,path_or_url,retrieved_at,review_status,notes\n",
+  "knowledge/target-markets.md": "# 市场：国家、语言、行业、渠道、品牌/产品线及需求依据\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n",
+  "knowledge/websites.md": "# 站点：AI建站/Shopify/WordPress/其他、网址、品牌、语言与权限\n\n状态：待客户资料；保留来源、日期、审核状态、公开范围和适用品牌/市场。\n"
+}

@@ -14,16 +14,16 @@
 
 ## 快速启动
 
-需要 Python 3.10+，服务端使用标准库，无需安装依赖。
+需要 Node.js 22.18+。Node.js + TypeScript 后端使用内置模块，运行无需安装依赖；开发检查需要 npm ci。部分 WorkBuddy 技能辅助脚本仍需要 Python 3.10+。
 
 ```powershell
 git clone https://github.com/colaliang/yundian-ai-growth-workbench.git
 cd yundian-ai-growth-workbench
 # 请先创建或选择你自己的客户项目目录
-python server.py --root "D:\MyCustomerProject" --port 8767
+npm start -- --root "D:\MyCustomerProject" --port 8767
 ```
 
-打开 http://127.0.0.1:8767/ 。macOS/Linux 也可运行，使用 python3 和实际目录路径。--root 必须是已存在且获授权的目录。首次启动会生成 growth-workspace/；先填写企业知识，再创建阶段任务。
+打开 http://127.0.0.1:8767/ 。macOS/Linux 也可运行，使用实际目录路径。--root 必须是已存在且获授权的目录。首次启动会生成 growth-workspace/；先填写企业知识，再创建阶段任务。
 
 ## 技能安装与 WorkBuddy
 
@@ -36,7 +36,7 @@ python server.py --root "D:\MyCustomerProject" --port 8767
 
 ## 当前能力
 
-七阶段导航、企业知识与来源录入、自定义任务与流程、项目文件保存、WorkBuddy任务指令、产物读回、客户验收、销售反馈。产物改变后旧验收失效。提供请求令牌、版本冲突检查与单文件原子替换。
+九个功能阶段导航、企业知识与来源录入、自定义任务与流程、项目文件保存、WorkBuddy任务指令、产物读回、客户验收、销售反馈。产物改变后旧验收失效。提供请求令牌、版本冲突检查与单文件原子替换。
 
 仅监听本机127.0.0.1，不是公网/多人服务。不同客户使用独立目录；不提供账号租户隔离。不要把客户数据、凭据或 growth-workspace/ 上传到仓库。广告仅只读分析；当前不包含模型后台直连、供应商API接入、自动发信或发布。真实外部执行依赖客户授权和工具配置。
 
@@ -45,7 +45,10 @@ python server.py --root "D:\MyCustomerProject" --port 8767
 [规划方案](docs/project-plan.zh-CN.md) · [技能说明](skills/yundian-growth-workbench/SKILL.md)
 
 ```powershell
-python -m unittest discover -s tests -v
+npm ci
+ npm run typecheck
+ npm test
+ python -m unittest discover -s tests -v
 node --check app-v03.js
 ```
 
@@ -96,4 +99,11 @@ ima与腾讯乐享作为按需扩展，使用WorkBuddy宿主实际授权能力�
 
 ## v0.11 工作功能
 各阶段支持真实业务记录、来源和结果保存，并能据此创建对应技能任务。SEO与GEO支持完整38/26项台账及逐项证据、责任人、整改和复查，缺少证据拒绝标通过。所有数据保存在客户项目文件，实际模型与外部工具执行仍由WorkBuddy宿主完成。
+
+
+## Node.js 后端与云端扩展（v0.12）
+
+默认启动 server.ts；server.py 暂时保留用于迁移回退。两种后端使用相同文件契约，但只能启动其中一个写入同一客户目录。迁移前停止旧服务并备份目录；初始化不会覆盖客户文件。后端采用 FileWorkspace 存储边界，保留 WorkBuddy 文件回写。
+
+腾讯云部署准备、存储与认证改造要求见 [云端扩展方案](docs/cloud-deployment.zh-CN.md)。当前版本仅本机运行，不代表已经支持公网多客户服务。
 
