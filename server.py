@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
 import uuid
@@ -33,6 +34,35 @@ def digest():
         if p.is_file(): h.update(str(p.relative_to(BASE)).encode()); h.update(p.read_bytes())
     return h.hexdigest()
 
+def registry():
+    return json.loads((APP/'skills/registry.json').read_text(encoding='utf-8'))
+
+def skill_status():
+    result={}
+    for stage, entry in registry().items():
+        source=APP/entry['path']
+        installed=ROOT/'.codebuddy/skills'/entry['id']/'SKILL.md'
+        installed.resolve().relative_to(ROOT)
+        result[stage]={**entry, 'status':'not-installed' if not installed.is_file() else 'installed' if source.read_bytes()==installed.read_bytes() else 'different', 'installedPath':str(installed)}
+    return result
+
+def install_skills():
+    pairs=[(APP/'skills/registry.json',ROOT/'.codebuddy/skills/registry.json')]
+    for folder in (APP/'skills').iterdir():
+        if not folder.is_dir() or not (folder/'SKILL.md').is_file(): continue
+        for source in folder.rglob('*'):
+            if not source.is_file() or '__pycache__' in source.parts: continue
+            target=ROOT/'.codebuddy/skills'/folder.name/source.relative_to(folder)
+            target.resolve().relative_to(ROOT)
+            if target.exists() and target.read_bytes()!=source.read_bytes(): raise ValueError('已有同名技能内容不同，保留客户版本：'+folder.name)
+            pairs.append((source,target))
+    for source,target in pairs:
+        target.resolve().relative_to(ROOT)
+        if target.exists() and target.read_bytes()!=source.read_bytes(): raise ValueError('已有技能注册表不同，请先检查客户版本')
+    for source,target in pairs:
+        target.parent.mkdir(parents=True,exist_ok=True)
+        if not target.exists(): shutil.copyfile(source,target)
+
 def load():
     state = json.loads(DB.read_text(encoding='utf-8')) if DB.exists() else {'profile': {}, 'tasks': [], 'feedback': []}
     # Task files are the shared contract with WorkBuddy; read external results back.
@@ -47,10 +77,11 @@ def load():
         artifact.resolve().relative_to(ROOT)
         if artifact.is_file():
             task['artifact']=str(artifact.relative_to(BASE))
-            if task.get('status')!='completed' or task.get('reviewedHash')!=hashlib.sha256(artifact.read_bytes()).hexdigest(): task['status']='needs-review'
+            if task.get('status') not in ['blocked','needs-input'] and (task.get('status')!='completed' or task.get('reviewedHash')!=hashlib.sha256(artifact.read_bytes()).hexdigest()): task['status']='needs-review'
         state['tasks'].append(task)
     state['workspace'] = json.loads((BASE/'workspace.json').read_text(encoding='utf-8'))
     state['knowledge'] = [{'path': str(p.relative_to(BASE)), 'content':p.read_text(encoding='utf-8')} for p in sorted((BASE/'knowledge').glob('*.md'))]
+    state['skills'] = skill_status()
     state['revision'] = digest()
     return state
 
@@ -61,7 +92,9 @@ def save(body):
         action, payload = body.get('action'), body.get('payload', {})
         state = {k:current[k] for k in ['profile','tasks','feedback']}
         now = datetime.now(timezone.utc).isoformat()
-        if action == 'profile':
+        if action == 'install-skills':
+            install_skills()
+        elif action == 'profile':
             fields=['company','products','markets','persona','goal','brand','source','projectRef','spaceRef']
             profile={k:str(payload.get(k,'')).strip()[:12000] for k in fields}
             if not profile['company'] or not profile['goal']: raise ValueError('请填写企业名称和获客目标')
@@ -78,7 +111,8 @@ def save(body):
             task={'id':uuid.uuid4().hex,'cycleId':str(payload.get('cycleId') or 'cycle-1'), 'stage':stage,
                   'name':str(payload['name'])[:500], 'instructions':str(payload.get('instructions',''))[:20000],
                   'inputs':str(payload.get('inputs',''))[:10000], 'acceptance':str(payload.get('acceptance',''))[:10000],
-                  'status':'ready', 'artifact':None, 'createdAt':now}
+                  'status':'ready', 'artifact':None, 'createdAt':now,
+                  'skillId':registry()[stage]['id'], 'skillPath':skill_status()[stage]['installedPath']}
             state['tasks'].append(task)
             atomic(BASE/'tasks'/f'{task["id"]}.json',json.dumps(task,ensure_ascii=False,indent=2))
             atomic(BASE/'workflows'/f'{task["id"]}.json',json.dumps({'id':task['id'],'version':1,'stage':stage,'goal':task['name'],'inputs':task['inputs'],'steps':task['instructions'],'acceptance':task['acceptance']},ensure_ascii=False,indent=2))
@@ -153,4 +187,5 @@ if __name__=='__main__':
         (BASE/child).resolve().relative_to(ROOT)
     print(f'WorkBuddy workbench: http://127.0.0.1:{PORT} | project: {ROOT}',flush=True)
     ThreadingHTTPServer(('127.0.0.1',PORT),Handler).serve_forever()
+
 

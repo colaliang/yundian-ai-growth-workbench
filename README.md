@@ -6,6 +6,12 @@
 
 客户定制各阶段目标、渠道、工具和验收标准，简化版直接利用 WorkBuddy 执行。默认空白项目，无虚构客户或模拟执行数据。
 
+## 关于云店+与搞跨境的可乐哥
+
+[云店+官网](https://www.ydjia.com/zh)专注 B2B 外贸企业的建站与数字营销，围绕公域引流、独立站承接和私域转化提供出海业务服务。业务包括 AI建站、WordPress定制建站、SEO/GEO、Google Ads、Facebook/TikTok 社媒营销、内容与数据分析；本项目还统一规划 Shopify独立站等建站路径。
+
+“搞跨境的可乐哥”（Cola）是云店+的跨境外贸营销实践者与内容分享者。按[官网介绍](https://www.ydjia.com/zh)，拥有10年以上跨境电商与外贸实战经验，专注 AI+B2B独立站建设及营销推广，擅长 AI建站、WordPress、SEO、Google Ads、Facebook营销与数据分析。本项目将这些线上获客经验沉淀为客户可重复使用和定制的技能、工作流与知识结构。业务服务介绍不表示开源工作台已自动接入广告投放或第三方付费工具。
+
 ## 快速启动
 
 需要 Python 3.10+，服务端使用标准库，无需安装依赖。
@@ -21,8 +27,8 @@ python server.py --root "D:\MyCustomerProject" --port 8767
 
 ## 技能安装与 WorkBuddy
 
-- 下载 [技能包 ZIP](dist/yundian-growth-workbench-v0.3.zip) 并按 WorkBuddy 的技能导入方式安装。
-- 或将 skills/yundian-growth-workbench 放入客户项目的 .codebuddy/skills/。
+- 下载 [完整技能包 ZIP](dist/yundian-growth-skills-v0.4.zip) 并按 WorkBuddy 的技能导入方式安装。
+- 在工作台“项目与设置”点击“安装项目技能”，将主技能及八个功能技能写入客户项目 .codebuddy/skills/；同名已有不同内容时拒绝覆盖。也可手工复制技能目录。完整ZIP包含多个技能目录，客户端只支持单技能导入时请分别导入对应目录。
 - 在 WorkBuddy 当前项目首次调用：**初始化我的获客工作台，先创建企业知识库并关联当前项目资料。**
 - 在网页任务详情复制 WorkBuddy 指令，交给原生项目对话执行。实际产物写入约定文件后刷新工作台可读回；也可在页面保存实际产物内容。客户填写验收依据后完成任务。
 
@@ -46,3 +52,18 @@ node --check app-v03.js
 ## 开源许可
 
 代码与技能采用 [MIT License](LICENSE)。云店+名称与logo为品牌标识，使用须遵守 [品牌说明](BRANDING.md)。欢迎通过 Issue 和 Pull Request 反馈改进。
+
+## 真实技能绑定
+
+企业知识库与七个阶段分别绑定专用技能，任务保存 skillId 与实际技能路径。页面显示“待安装 / 项目文件已安装 / 版本不同”，这只说明文件存在，不声称 WorkBuddy 已载入或执行。任务指令要求读取对应SKILL.md并使用实际工具；主技能 submit_result.py 负责可验证回写。供应商API仍须另外配置授权。
+
+| 功能 | 专用技能 |
+|---|---|
+| 企业知识库 | `yundian-growth-knowledge` |
+| 市场调研 | `yundian-growth-market-research` |
+| 产品机会 | `yundian-growth-product-opportunity` |
+| 建站与内容 | `yundian-growth-site-and-content` |
+| 获客 | `yundian-growth-acquisition` |
+| 客户背调 | `yundian-growth-buyer-check` |
+| 销售反馈 | `yundian-growth-sales-feedback` |
+| 优化下一轮 | `yundian-growth-next-cycle` |

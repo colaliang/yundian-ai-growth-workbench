@@ -25,6 +25,29 @@ class PersistenceTests(unittest.TestCase):
     def save(self, action, payload):
         return server.save({"revision": server.load()["revision"], "action": action, "payload": payload})
 
+    def test_function_install_binding_and_agent_result(self):
+        state = self.save("install-skills", {})
+        self.assertTrue(all(s["status"] == "installed" for s in state["skills"].values()))
+        self.assertTrue((server.ROOT / ".codebuddy/skills/registry.json").is_file())
+        self.save("profile", {"company": "Test company", "goal": "Research"})
+        task = self.save("task", {"name": "Research", "stage": "market-research"})["tasks"][0]
+        self.assertEqual(task["skillId"], "yundian-growth-market-research")
+        script = Path(__file__).resolve().parents[1] / "skills/yundian-growth-workbench/scripts/submit_result.py"
+        spec = importlib.util.spec_from_file_location("submit", script)
+        submit = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(submit)
+        output = server.ROOT / "actual-result.md"
+        output.write_text("Actual tool result with sources", encoding="utf-8")
+        submit.submit(server.ROOT, task["id"], output)
+        self.assertEqual(server.load()["tasks"][0]["status"], "needs-review")
+        submit.submit(server.ROOT, task["id"], status="blocked", reason="Connector unavailable")
+        self.assertEqual(server.load()["tasks"][0]["status"], "blocked")
+        existing = server.ROOT / ".codebuddy/skills/yundian-growth-market-research/SKILL.md"
+        existing.write_text("customer customization", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.save("install-skills", {})
+        self.assertEqual(existing.read_text(encoding="utf-8"), "customer customization")
+
     def test_initialization_preserves_customer_files(self):
         profile = server.BASE / "knowledge/profile.md"
         profile.write_text("customer facts", encoding="utf-8")
@@ -57,3 +80,4 @@ class PersistenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

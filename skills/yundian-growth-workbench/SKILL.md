@@ -28,3 +28,7 @@ description: 在 WorkBuddy 客户项目中初始化知识库、定义和执行�
 ## 搭建或调整 UI
 
 仅在客户要求开发界面时读取 [BUILD_BRIEF.md](references/BUILD_BRIEF.md)。沿用现有代码和客户选择，先检查目录与修改状态。交付需区分实际实现、验证结果和未实现项，不将静态预览称为原生集成。
+
+## 功能技能路由
+
+每个阶段必须读取并调用 skills/registry.json 中的对应技能（安装后位于项目 .codebuddy/skills/）。知识库使用 yundian-growth-knowledge；其余七阶段各自对应同名业务技能。不能只生成指令而宣称已经执行。执行实际工作后调用 scripts/submit_result.py 回写文件与状态，待客户验收。安装或使用状态与供应商连接器授权分别说明。

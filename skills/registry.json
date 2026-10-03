@@ -1,0 +1,42 @@
+{
+  "knowledge": {
+    "id": "yundian-growth-knowledge",
+    "title": "企业知识库",
+    "path": "skills/yundian-growth-knowledge/SKILL.md"
+  },
+  "market-research": {
+    "id": "yundian-growth-market-research",
+    "title": "市场调研",
+    "path": "skills/yundian-growth-market-research/SKILL.md"
+  },
+  "product-opportunity": {
+    "id": "yundian-growth-product-opportunity",
+    "title": "产品机会",
+    "path": "skills/yundian-growth-product-opportunity/SKILL.md"
+  },
+  "site-and-content": {
+    "id": "yundian-growth-site-and-content",
+    "title": "建站与内容",
+    "path": "skills/yundian-growth-site-and-content/SKILL.md"
+  },
+  "acquisition": {
+    "id": "yundian-growth-acquisition",
+    "title": "获客",
+    "path": "skills/yundian-growth-acquisition/SKILL.md"
+  },
+  "buyer-check": {
+    "id": "yundian-growth-buyer-check",
+    "title": "客户背调",
+    "path": "skills/yundian-growth-buyer-check/SKILL.md"
+  },
+  "sales-feedback": {
+    "id": "yundian-growth-sales-feedback",
+    "title": "销售反馈",
+    "path": "skills/yundian-growth-sales-feedback/SKILL.md"
+  },
+  "next-cycle": {
+    "id": "yundian-growth-next-cycle",
+    "title": "优化下一轮",
+    "path": "skills/yundian-growth-next-cycle/SKILL.md"
+  }
+}
