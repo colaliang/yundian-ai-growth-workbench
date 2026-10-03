@@ -32,3 +32,7 @@ description: 在 WorkBuddy 客户项目中初始化知识库、定义和执行�
 ## 功能技能路由
 
 每个阶段必须读取并调用 skills/registry.json 中的对应技能（安装后位于项目 .codebuddy/skills/）。知识库使用 yundian-growth-knowledge；其余七阶段各自对应同名业务技能。不能只生成指令而宣称已经执行。执行实际工作后调用 scripts/submit_result.py 回写文件与状态，待客户验收。安装或使用状态与供应商连接器授权分别说明。
+
+## v0.10 功能拆分
+
+建站与内容拆为建站（保留site-and-content标识兼容历史）、SEO与GEO（seo-geo）、内容运营（content-operations）；获客改为主动获客（acquisition），聚焦LinkedIn主动开发，不包含Facebook/Google Ads报告及泛社媒获客。分别调用registry.json中的对应技能。七步业务闭环不变，页面把其中一阶段拆为三个工作入口；已有任务不删除。

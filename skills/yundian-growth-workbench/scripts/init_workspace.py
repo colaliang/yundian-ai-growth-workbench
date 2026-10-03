@@ -18,7 +18,7 @@ def initialize(root):
             'nativeBinding': {'status': 'pending', 'projectRef': None, 'spaceRef': None},
             'knowledgeStatus': 'needs-input', 'goals': [], 'modules': [],
             'connectors': [], 'coreDirection': 'customer-acquisition',
-            'stages': ['market-research', 'product-opportunity', 'site-and-content',
+            'stages': ['market-research', 'product-opportunity', 'site-and-content', 'seo-geo', 'content-operations',
                        'acquisition', 'buyer-check', 'sales-feedback', 'next-cycle'],
             'currentStage': None, 'cycles': []}, ensure_ascii=False, indent=2) + '\n',
         'knowledge/00-index.md': '# 知识库索引\n\n状态：待客户提供资料；原生项目资料库关联待验证。\n\n记录每份资料的路径、来源、日期、审核状态和适用工作。\n',

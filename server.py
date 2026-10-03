@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 APP = Path(__file__).resolve().parent
-STAGES = ['market-research','product-opportunity','site-and-content','acquisition','buyer-check','sales-feedback','next-cycle']
+STAGES = ['market-research','product-opportunity','site-and-content','seo-geo','content-operations','acquisition','buyer-check','sales-feedback','next-cycle']
 LOCK = Lock()
 TOKEN = secrets.token_urlsafe(32)
 

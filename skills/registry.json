@@ -16,12 +16,12 @@
   },
   "site-and-content": {
     "id": "yundian-growth-site-and-content",
-    "title": "建站与内容",
+    "title": "建站",
     "path": "skills/yundian-growth-site-and-content/SKILL.md"
   },
   "acquisition": {
     "id": "yundian-growth-acquisition",
-    "title": "获客",
+    "title": "主动获客 · LinkedIn",
     "path": "skills/yundian-growth-acquisition/SKILL.md"
   },
   "buyer-check": {
@@ -41,7 +41,12 @@
   },
   "seo-geo": {
     "id": "yundian-growth-seo-geo",
-    "title": "SEO/GEO/AEO验收",
+    "title": "SEO与GEO",
     "path": "skills/yundian-growth-seo-geo/SKILL.md"
+  },
+  "content-operations": {
+    "id": "yundian-growth-content-operations",
+    "title": "内容运营",
+    "path": "skills/yundian-growth-content-operations/SKILL.md"
   }
 }

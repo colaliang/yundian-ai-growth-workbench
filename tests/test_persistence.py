@@ -53,7 +53,7 @@ class PersistenceTests(unittest.TestCase):
         profile.write_text("customer facts", encoding="utf-8")
         self.initializer.initialize(server.ROOT)
         self.assertEqual(profile.read_text(encoding="utf-8"), "customer facts")
-        self.assertEqual(len(server.load()["workspace"]["stages"]), 7)
+        self.assertEqual(len(server.load()["workspace"]["stages"]), 9)
         config = json.loads((server.BASE / "knowledge/sources-config.json").read_text(encoding="utf-8"))
         self.assertEqual(config["storageMode"], "local-first")
         self.assertEqual(config["externalSources"], [])
