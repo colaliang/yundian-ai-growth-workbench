@@ -54,6 +54,11 @@ class PersistenceTests(unittest.TestCase):
         self.initializer.initialize(server.ROOT)
         self.assertEqual(profile.read_text(encoding="utf-8"), "customer facts")
         self.assertEqual(len(server.load()["workspace"]["stages"]), 7)
+        config = json.loads((server.BASE / "knowledge/sources-config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["storageMode"], "local-first")
+        self.assertEqual(config["externalSources"], [])
+        self.assertTrue((server.BASE / "knowledge/brand-profile.md").is_file())
+        self.assertTrue((server.BASE / "knowledge/buyer-personas.md").is_file())
 
     def test_task_artifact_acceptance_and_feedback(self):
         self.save("profile", {"company": "Test company", "goal": "Research demand"})
@@ -80,4 +85,5 @@ class PersistenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

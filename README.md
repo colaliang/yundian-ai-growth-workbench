@@ -27,7 +27,7 @@ python server.py --root "D:\MyCustomerProject" --port 8767
 
 ## 技能安装与 WorkBuddy
 
-- 下载 [完整技能包 ZIP](dist/yundian-growth-skills-v0.4.zip) 并按 WorkBuddy 的技能导入方式安装。
+- 下载 [完整技能包 ZIP](dist/yundian-growth-skills-v0.5.zip) 并按 WorkBuddy 的技能导入方式安装。
 - 在工作台“项目与设置”点击“安装项目技能”，将主技能及八个功能技能写入客户项目 .codebuddy/skills/；同名已有不同内容时拒绝覆盖。也可手工复制技能目录。完整ZIP包含多个技能目录，客户端只支持单技能导入时请分别导入对应目录。
 - 在 WorkBuddy 当前项目首次调用：**初始化我的获客工作台，先创建企业知识库并关联当前项目资料。**
 - 在网页任务详情复制 WorkBuddy 指令，交给原生项目对话执行。实际产物写入约定文件后刷新工作台可读回；也可在页面保存实际产物内容。客户填写验收依据后完成任务。
@@ -67,3 +67,9 @@ node --check app-v03.js
 | 客户背调 | `yundian-growth-buyer-check` |
 | 销售反馈 | `yundian-growth-sales-feedback` |
 | 优化下一轮 | `yundian-growth-next-cycle` |
+
+## 企业知识库：WorkBuddy本地优先
+
+默认以客户项目 growth-workspace/knowledge/ 为主要知识库，无需开通云端服务。初始化覆盖 Organization、Brand Profile、产品、站点、目标市场、买家画像、CRM/线索、社媒、统计及增长动作；重复运行只补缺文件。事实按来源、日期、审核、公开范围及品牌/市场使用，企业资料不依附WordPress。
+
+ima与腾讯乐享作为按需扩展，使用WorkBuddy宿主实际授权能力；不自动上传、全量缓存或双向同步。本仓库尚未提供独立云端API客户端。详见[知识技能](skills/yundian-growth-knowledge/SKILL.md)与[扩展来源规范](skills/yundian-growth-knowledge/references/EXTERNAL_SOURCES.md)。
