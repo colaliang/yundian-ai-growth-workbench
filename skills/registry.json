@@ -38,5 +38,10 @@
     "id": "yundian-growth-next-cycle",
     "title": "优化下一轮",
     "path": "skills/yundian-growth-next-cycle/SKILL.md"
+  },
+  "seo-geo": {
+    "id": "yundian-growth-seo-geo",
+    "title": "SEO/GEO/AEO验收",
+    "path": "skills/yundian-growth-seo-geo/SKILL.md"
   }
 }

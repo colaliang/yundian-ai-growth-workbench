@@ -18,3 +18,7 @@ description: 在 WorkBuddy 客户项目中执行AI建站、Shopify或WordPress�
 `python <主技能目录>/scripts/submit_result.py --root <客户项目目录> --task <实际任务ID> --file <实际产物文件>`
 
 脚本会保存并读回产物、更新任务为待验收；不代替模型执行或客户验收。若任务被阻塞，用同一脚本的 `--status blocked --reason <具体原因>` 记录，不需要产物文件。网页刷新读取状态。知识任务没有任务ID时直接更新知识文件并索引来源，报告真实修改的路径。
+
+## SEO/GEO/AEO专用路由
+
+涉及SEO、GEO、AEO诊断/整改/验收时，调用项目安装的 yundian-growth-seo-geo，按对应Shopify/WordPress标准生成逐项证据台账；不以页面生成或一般内容草稿代替验收。

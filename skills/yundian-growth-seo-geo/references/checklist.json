@@ -1,0 +1,578 @@
+[
+  {
+    "id": "T01",
+    "title": "正式主题与模板指派",
+    "level": "P0",
+    "platform": "shopify",
+    "requirement": "验收要求  正式主题与批准版本一致；产品、集合和普通页面使用正确模板，所有关键区块在公开站呈现。",
+    "method": "检查方法与证据  对照后台主题角色与页面模板字段，匿名打开正式URL，检查桌面与手机；保存主题ID、模板名、截图。",
+    "failure": "未通过示例  预览页面正确但正式页面仍旧、模板未指派或缺失关键内容。"
+  },
+  {
+    "id": "T02",
+    "title": "HTTPS 与主域名",
+    "level": "P0",
+    "platform": "shopify",
+    "requirement": "验收要求  主域名可通过HTTPS访问，证书有效；备用域名跳转符合Shopify设置；页面资源无混合内容。",
+    "method": "检查方法与证据  检查首页和主要路径HTTP响应、证书及浏览器控制台；保留跳转链记录。",
+    "failure": "未通过示例  安全警告、HTTPS循环跳转、错误域名Canonical或资源加载失败。"
+  },
+  {
+    "id": "T03",
+    "title": "核心性能与网页指标",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  各模板按同一测试环境记录三次结果中位数；建议PSI移动≥70、桌面≥85。具备真实用户数据时参考LCP≤2.5秒、INP≤200毫秒、CLS≤0.1的第75百分位。",
+    "method": "检查方法与证据  记录设备、地区、网络、日期、URL和PSI报告；说明应用脚本影响。无真实用户数据时使用实验室结果并标记数据不足。",
+    "failure": "未通过示例  缺少测试口径、明显图片过大或阻塞脚本；不能以单次跑分证明长期达标。"
+  },
+  {
+    "id": "T04",
+    "title": "移动端与无障碍基础",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  常用屏宽下布局正常、文字可读、菜单可操作、表单有标签与错误提示，键盘焦点可见；触控目标建议约44至48像素。",
+    "method": "检查方法与证据  至少检查360、390、768、1440像素及键盘操作；保存完整测试矩阵。",
+    "failure": "未通过示例  横向滚动、内容遮挡、操作区无法点击或错误提示不可读。"
+  },
+  {
+    "id": "T05",
+    "title": "404 与失效链接",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  不存在页面返回404，提供首页、集合或搜索入口；有效内链不指向404或循环跳转。",
+    "method": "检查方法与证据  访问随机不存在路径并检查状态码；爬取站内链接，登记来源页和目标页。",
+    "failure": "未通过示例  错误页返回200、整站将无效URL转首页或关键CTA失效。"
+  },
+  {
+    "id": "T06",
+    "title": "URL 与历史重定向",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  保留已批准产品handle；确需改名时设置旧到新URL的有效重定向，减少跳转链。",
+    "method": "检查方法与证据  抽查历史URL、新URL及Shopify重定向记录；记录最终状态与落点。",
+    "failure": "未通过示例  旧页流量入口404、跳转到无关页面、循环或过长链。"
+  },
+  {
+    "id": "T07",
+    "title": "Canonical 与索引指令",
+    "level": "P0",
+    "platform": "shopify",
+    "requirement": "验收要求  核心可索引页拥有一致的规范URL，不意外输出noindex；参数、集合内产品路径和分页按实际页面类型检查。",
+    "method": "检查方法与证据  读取HTML中的canonical、meta robots和HTTP头；核对GSC抽样检查。",
+    "failure": "未通过示例  核心页canonical指向首页或无关商品、noindex误加；仅靠robots阻止索引。"
+  },
+  {
+    "id": "T08",
+    "title": "Shopify 站点地图",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  /sitemap.xml和子地图可访问、XML有效；应收录的公开产品、集合、页面与文章符合发布状态和索引设置。",
+    "method": "检查方法与证据  打开根地图与全部子地图；对比后台可索引清单、规范URL与状态码。",
+    "failure": "未通过示例  覆盖为人工静态地图、包含无效或非规范URL、应收录内容被意外隐藏。"
+  },
+  {
+    "id": "T09",
+    "title": "robots.txt 规则",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  保留Shopify默认规则基础，定制仅针对明确需求；公共核心内容可抓取，内部交易路径规则符合平台输出。",
+    "method": "检查方法与证据  读取robots.txt与robots.txt.liquid如有，测试代表性路径及不同User-agent；保存修改前后版本。",
+    "failure": "未通过示例  宽泛Disallow误封全站；将robots当作数据保密机制。"
+  },
+  {
+    "id": "T10",
+    "title": "GSC 与 Bing 工具",
+    "level": "P2",
+    "platform": "shopify",
+    "requirement": "验收要求  授权条件具备时验证相应站点、提交sitemap、记录错误与权限；业主可持续访问。",
+    "method": "检查方法与证据  保留属性验证、站点地图状态、URL Inspection及Bing证据；标明所有者账号。",
+    "failure": "未通过示例  仅创建账号却未验证；无业主访问权或无提交记录。"
+  },
+  {
+    "id": "T11",
+    "title": "索引请求与更新流程",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  新内容通过有效地图与内链发现；优先页面可按工具流程请求索引。普通商品不能依赖Google Indexing API自动提交。",
+    "method": "检查方法与证据  演示一项发布后的地图/内链检查及工具记录；IndexNow若采用须额外核验实现。",
+    "failure": "未通过示例  承诺发布24小时必收录、将不适用API作为交付必需项。"
+  },
+  {
+    "id": "T12",
+    "title": "Markets 与国际化",
+    "level": "P2",
+    "platform": "shopify",
+    "requirement": "验收要求  美国语言、USD货币、配送市场和域名策略一致；多语言时验证hreflang、自引用、返回链接与正确语言。",
+    "method": "检查方法与证据  抽查市场切换、页面语言与商品报价，核对后台Markets及页面源代码。",
+    "failure": "未通过示例  币种、地区价格、语言URL或配送市场相互矛盾。"
+  },
+  {
+    "id": "C01",
+    "title": "搜索标题与元描述",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  按资源维护唯一且准确的标题和描述；现有批准标题保留。英文Title约50至60字符、Description约120至170字符为编辑参考，实际以显示和语义完整性为准。",
+    "method": "检查方法与证据  对照后台SEO字段与正式HTML；检查重名、空值、品牌重复；标题改动需独立授权记录。",
+    "failure": "未通过示例  仅后台字段正确但主题输出错误，或批量覆盖已批准标题。"
+  },
+  {
+    "id": "C02",
+    "title": "Heading 层级",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  核心模板一个主要H1，H2/H3组织内容主题，标题与页面目的相符；Logo不占用额外主标题。",
+    "method": "检查方法与证据  DOM提取全部标题并与可见内容对照，检查首页、产品、集合与文章。",
+    "failure": "未通过示例  多个同等主H1、重复页标题、层级混乱影响阅读。"
+  },
+  {
+    "id": "C03",
+    "title": "产品规格与购买信息",
+    "level": "P0",
+    "platform": "shopify",
+    "requirement": "验收要求  尺寸、材料、光源、功率、适用电压、颜色、定制范围与正式资料一致；英寸/毫米换算准确；未提供的信息标待确认。",
+    "method": "检查方法与证据  逐SKU对照资料、变体及正文；记录单位换算、数据来源、审核人。",
+    "failure": "未通过示例  臆造UL认证、调光兼容、安装保证、库存、价格或未经确认规格。"
+  },
+  {
+    "id": "C04",
+    "title": "集合页决策内容",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  集合说明解释空间、尺寸和选型差异，支持产品比较，并链接相关指南和Custom Lighting；内容与集合成员相符。",
+    "method": "检查方法与证据  核对集合商品、正文与CTA；查看筛选、排序及手机呈现。",
+    "failure": "未通过示例  通用堆词、列出未销售型号、文案修改影响集合规则或成员。"
+  },
+  {
+    "id": "C05",
+    "title": "图片与视频",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  图片清晰、大小合理、alt准确；装饰图适当空alt；页面图片使用Shopify托管资源。视频有必要的文字摘要、字幕及可访问说明。",
+    "method": "检查方法与证据  检查图片URL、alt、加载尺寸、移动裁切；核验Files/产品媒体与视频设置。",
+    "failure": "未通过示例  外部图片热链、无alt、尺寸失真；AI图冒充产品实拍或项目案例。"
+  },
+  {
+    "id": "C06",
+    "title": "内链与面包屑",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  核心集合、产品、服务与指南形成有效链接；链接文字明确，所有重点页有可发现入口。",
+    "method": "检查方法与证据  爬取孤立页、失效链接和链深，检查导航、面包屑及正文相关链接。",
+    "failure": "未通过示例  重要指南只有直接URL可访问；锚文本全部重复关键词。"
+  },
+  {
+    "id": "C07",
+    "title": "重复内容与主题覆盖",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  同类页面体现产品/空间差异；避免模板正文大量重复。重复检测辅助编辑审核，不以统一原创率百分比代替内容质量。",
+    "method": "检查方法与证据  核对重复标题描述及主要段落，检查参数页和canonical；登记需合并内容。",
+    "failure": "未通过示例  不加区分的批量AI正文、搬运他站案例或同内容多路径索引。"
+  },
+  {
+    "id": "C08",
+    "title": "企业与联系资料",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  公司名称、品牌关系、地址、邮箱、电话、营业方式真实一致；Contact地图可显示且指向正确地点。",
+    "method": "检查方法与证据  对照商家资料，测试mailto、电话、WhatsApp与地图；保存核查日期。",
+    "failure": "未通过示例  将办公室说成开放展厅、使用未核实地址或未授权电话。"
+  },
+  {
+    "id": "C09",
+    "title": "政策与美国市场",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  配送、生产周期、退换、定制订单、隐私及服务条款完整一致；生产与运输时间分开说明，适用范围和例外明确。",
+    "method": "检查方法与证据  核查正式政策、产品文案、页脚、结账入口；交商家审定商业承诺及适用条款。",
+    "failure": "未通过示例  文案与实际运费冲突；全额免费退货或折扣承诺未经确认。"
+  },
+  {
+    "id": "C10",
+    "title": "作者与经验可信度",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  内容有真实发布主体、可追踪日期和事实来源；About与真实案例说明经验；不得虚构作者资格、评论或项目。",
+    "method": "检查方法与证据  抽查署名、更新记录、来源链接、案例授权与照片。",
+    "failure": "未通过示例  伪造专业资质、奖项、安装实绩或客户评价。"
+  },
+  {
+    "id": "C11",
+    "title": "转化路径与询盘",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  零售CTA指向有效商品/集合；Trade和Custom Lighting有清晰路径，表单字段、成功提示和收件配置可核验。",
+    "method": "检查方法与证据  测试购物车与联系入口；真实询盘投递测试须按授权执行并取得收件证据。",
+    "failure": "未通过示例  只看到成功提示就称邮件已到达，或表单跳转失效。"
+  },
+  {
+    "id": "G01",
+    "title": "电商结构化数据",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  Product/Offer与可见售价、USD、可售状态、图片和变体一致；Organization、BreadcrumbList、Article按内容适用；主题和应用输出可共存但不能冲突。",
+    "method": "检查方法与证据  用Rich Results Test/Schema Validator及HTML核验关键字段，保存URL和测试报告。",
+    "failure": "未通过示例  错误价格库存、重复冲突Offer、伪造AggregateRating或评价数量。"
+  },
+  {
+    "id": "G02",
+    "title": "问答与直接答案",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  围绕用户具体问题给出简洁开头答案，后续补充步骤、比较与条件；关键结论可在HTML正文读取。",
+    "method": "检查方法与证据  抽检至少5个问答主题，记录问题、答案、产品/政策依据与相关链接。",
+    "failure": "未通过示例  空泛营销段落、只有图片文字、无法从正文提取答案。"
+  },
+  {
+    "id": "G03",
+    "title": "FAQ HowTo 与特殊标记",
+    "level": "P2",
+    "platform": "shopify",
+    "requirement": "验收要求  仅对匹配可见内容使用标记；FAQPage、HowTo、Speakable不是普通Shopify店铺获取AI引用的必选配置。",
+    "method": "检查方法与证据  核对平台支持与可见内容；保留适用性说明，工具不支持时不以富结果通过为要求。",
+    "failure": "未通过示例  把结构化标记当作搜索展示或AI引用保证。"
+  },
+  {
+    "id": "G04",
+    "title": "AI 访问策略",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  商家确认搜索发现、用户请求访问与模型训练的允许策略；不同爬虫分别记录，公开核心内容具备合理可访问性。",
+    "method": "检查方法与证据  核查User-agent规则、HTTP访问与平台说明；记录已允许/限制名单。",
+    "failure": "未通过示例  将GPTBot、搜索爬虫和训练用途混为一谈；未经商家选择全部放行。"
+  },
+  {
+    "id": "G05",
+    "title": "llms.txt 与 agents.md",
+    "level": "P2",
+    "platform": "shopify",
+    "requirement": "验收要求  若列入交付，约定具体路径、内容维护责任与部署方式。HTTP200，正文可读、链接有效、品牌与事实一致；Shopify根路径须实际验证实现。",
+    "method": "检查方法与证据  逐路径GET检查状态、正文、Content-Type与重定向；记录托管方式及缓存更新。",
+    "failure": "未通过示例  文件仅在本地或后台Files存在却声称根路径已上线；把该文件当作排名必需条件。"
+  },
+  {
+    "id": "G06",
+    "title": "品牌实体一致性",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  说明EME Lighting与Aura Light Boutique LLC的真实关系；网站及已授权外部资料中的NAP和品牌介绍保持一致。",
+    "method": "检查方法与证据  建立名称/地址/电话/域名比对表，登记差异与修正责任人。",
+    "failure": "未通过示例  为凑一致性更改真实注册名称、强制申请Wikipedia或保证知识面板。"
+  },
+  {
+    "id": "G07",
+    "title": "吊灯主题集群",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  覆盖尺寸、层高、餐厅、玄关、楼梯、水晶材料、定制、酒店与设计师采购；零售内容和工程内容分别匹配意图。",
+    "method": "检查方法与证据  交付主题图、问题清单、目标路径、内部链接与发布计划；抽验事实和重复性。",
+    "failure": "未通过示例  仅列关键词，无页面对应和可执行内容；不真实案例用于获链。"
+  },
+  {
+    "id": "G08",
+    "title": "来源与可引用内容",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  规格、单位、流程、政策均给出可追溯依据；表格/清单对用户选型有用，明确假设与适用条件。",
+    "method": "检查方法与证据  抽查事实对应的产品记录、官方参考或商家批准资料；留存版本日期。",
+    "failure": "未通过示例  未经核实的绝对安全结论、笼统“最佳”承诺或错误换算。"
+  },
+  {
+    "id": "G09",
+    "title": "多模态与场景图",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  AI场景图标明设计灵感，产品参考图保留真实结构；案例图片有授权；视频文字与实际内容对应。",
+    "method": "检查方法与证据  核对原图、生成记录、文件链接、说明文字及产品关联。",
+    "failure": "未通过示例  生成图作为已完成酒店案例，或灯具细节与所售产品不一致却没有说明。"
+  },
+  {
+    "id": "G10",
+    "title": "AI 答案观察与外链",
+    "level": "P2",
+    "platform": "shopify",
+    "requirement": "验收要求  建立固定问题和搜索环境记录品牌呈现、来源与错误；行业引用重相关性和真实性，付费/用户链接采用适当属性。",
+    "method": "检查方法与证据  记录引擎、时间、地区、问题、答案截图、引用URL；保留外链来源和获链方式。",
+    "failure": "未通过示例  承诺特定AI必引用、批量垃圾目录/购买排名链接，或用锚文本比例代替质量审查。"
+  },
+  {
+    "id": "O01",
+    "title": "分析与转化追踪",
+    "level": "P2",
+    "platform": "shopify",
+    "requirement": "验收要求  账号获授权时配置GA4/Shopify分析，核验view_item、add_to_cart、begin_checkout、purchase及询盘事件，避免重复计数；遵守实际同意机制。",
+    "method": "检查方法与证据  调试事件与订单对照，保存账号权限、事件定义、筛选方式；没有数据时填待验证。",
+    "failure": "未通过示例  误报收入、重复purchase、访问行为与事件参数不匹配。"
+  },
+  {
+    "id": "O02",
+    "title": "月度 SEO GEO 报告",
+    "level": "观察",
+    "platform": "shopify",
+    "requirement": "验收要求  报告收录、搜索展示点击、流量、转化和询盘；解释内容集群表现，保留数据范围与观察限制。",
+    "method": "检查方法与证据  注明时间窗口、数据来源和缺失项；用真实基线评价，不强制停留2分钟或跳出率60%。",
+    "failure": "未通过示例  捏造统计或把相关性当作因果；没有观察期就验收增长。"
+  },
+  {
+    "id": "O03",
+    "title": "发布与回滚",
+    "level": "P0",
+    "platform": "shopify",
+    "requirement": "验收要求  每次变更有资源ID、原值/新值、主题与发布时间、批准范围及回滚方式；产品字段、政策和标题修改有独立授权。",
+    "method": "检查方法与证据  读回后台字段并检查正式URL；保存备份与整改记录；回滚不删除有用业务资料。",
+    "failure": "未通过示例  未经授权发布主题、改价、改库存、删除数据或更换产品媒体。"
+  },
+  {
+    "id": "O04",
+    "title": "自动内容发布",
+    "level": "P2",
+    "platform": "shopify",
+    "requirement": "验收要求  计划有唯一队列ID、时区、次数上限、事实校验、查重和失败记录；发布前通过门槛，发生不明写入先核对。",
+    "method": "检查方法与证据  核验实际自动化配置、下一运行时间、完整一次到期运行、发布读回和日志；仅创建任务不足以证明流程通过。",
+    "failure": "未通过示例  以空队列演练代替完整内容发布验收；时区错误或重复发布。"
+  },
+  {
+    "id": "O05",
+    "title": "资料交付与移交",
+    "level": "P1",
+    "platform": "shopify",
+    "requirement": "验收要求  交付自检报告、页面清单、配置说明、账号权限、变更台账、待整改项和复查日期；甲方可持续运营。",
+    "method": "检查方法与证据  逐文件检查版本、路径、责任人与证据；形成双方签收记录。",
+    "failure": "未通过示例  只交宣传总结，无URL、测试记录或操作说明。"
+  },
+  {
+    "id": "WP01",
+    "title": "网站速度优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "首页及核心页面在3G网络下首屏加载时间≤3秒；Google PageSpeed Insights 移动端评分≥70分，桌面端≥85分",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP02",
+    "title": "移动端友好度优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "全站响应式适配，通过Google Mobile-Friendly Test；无横向滚动、无元素重叠、触控目标尺寸≥48×48px",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP03",
+    "title": "HTTPS安全协议",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "全站强制HTTPS访问，SSL证书有效且配置正确；浏览器无'不安全'警告",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP04",
+    "title": "404页面设计优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "自定义404页面包含返回首页链接、热门内容推荐及搜索框；HTTP状态码返回404而非302/200",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP05",
+    "title": "GSC工具安装与配置",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "成功注册并验证Google Search Console；提交Sitemap.xml；配置首选域及国际化目标市场",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP06",
+    "title": "Sitemap.xml 制作",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "生成标准XML站点地图，包含所有可索引URL、最后修改时间、更新频率及优先级；每月自动更新",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP07",
+    "title": "Robots.txt 优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "正确配置robots.txt文件，明确允许/禁止爬取规则；指向Sitemap.xml路径；无语法错误",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP08",
+    "title": "网站推送代码优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "集成IndexNow API或Google Indexing API自动推送；新页面发布24小时内主动提交搜索引擎",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP09",
+    "title": "URL规范化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "全站URL统一使用HTTPS + 首选域；无重复内容URL（带/不带www、带/不带斜杠已301重定向）；URL结构语义化、静态化",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP10",
+    "title": "Meta Title 标签优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "每个页面拥有唯一Title，长度50-60字符，包含核心关键词且前置；品牌词置于末尾（如'关键词 | 品牌名'）",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP11",
+    "title": "Meta Description 优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "每个页面拥有唯一Description，长度150-160字符，包含行动号召（CTA）及核心关键词；无重复或空值",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP12",
+    "title": "Heading 标签优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "页面层级结构清晰：H1唯一且包含核心关键词；H2/H3合理分布子主题；无跳级（如H1直接接H3）",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP13",
+    "title": "Schema结构化数据",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "部署Article/Product/Organization/BreadcrumbList等Schema标记；通过Google Rich Results Test无错误",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP14",
+    "title": "图片Alt标签优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "所有内容图片添加描述性Alt文本，包含相关关键词；装饰性图片使用空Alt；图片文件名语义化",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP15",
+    "title": "Internal Linking 内链优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "核心页面间存在合理内链网络；锚文本多样化且包含关键词；无孤立页面（Orphan Pages）；面包屑导航完整",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP16",
+    "title": "Duplicate Content 优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "全站内容原创度≥90%（Copyscape/Turnitin检测）；无跨域重复、无参数化URL导致的重复内容；Canonical标签正确设置",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP17",
+    "title": "网站基本信息完善",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "页脚包含完整企业信息（公司名称、地址、电话、邮箱、版权信息）；联系页面信息真实可验证；隐私政策/服务条款页面完整",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP18",
+    "title": "内容E-E-A-T信号",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "作者署名及作者简介展示；文章发布/更新日期标注；引用权威来源并标注出处；About页面展示企业资质与团队背景",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP19",
+    "title": "结构化数据深度优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "部署FAQPage、HowTo、Speakable等AI友好Schema；关键问答内容使用FAQ结构化标记",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP20",
+    "title": "实体识别与知识图谱",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "企业/品牌/核心产品在Google Knowledge Graph中有明确实体卡片；Wikidata/Wikipedia关联（如适用）；品牌名搜索触发Knowledge Panel",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP21",
+    "title": "AI抓取与索引优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "内容可被主流AI爬虫（GPTBot、Google-Extended、CCBot等）正常抓取；robots.txt未误屏蔽AI爬虫；提供清晰的txt/JSON格式内容摘要",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP22",
+    "title": "零点击搜索优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "核心问答内容直接出现在搜索结果Featured Snippet中；People Also Ask (PAA) 问题覆盖≥5个相关查询",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP23",
+    "title": "语义搜索与主题集群",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "围绕核心主题构建内容集群（Pillar + Cluster）；LSI关键词自然覆盖；使用自然语言问答式标题（H2/H3）",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP24",
+    "title": "多模态内容优化",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "核心页面包含高质量原创图片/信息图/视频；视频添加字幕、Schema标记及文字摘要；图片EXIF信息包含品牌标识",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP25",
+    "title": "品牌实体一致性",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "全平台（网站、社媒、B2B平台）品牌名称、Logo、简介、联系方式完全一致；NAP（Name/Address/Phone）信息统一",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  },
+  {
+    "id": "WP26",
+    "title": "用户互动信号",
+    "level": "待按当前口径分级",
+    "platform": "wordpress",
+    "requirement": "集成评论/评分系统（Schema标记）；页面停留时间≥2分钟；跳出率≤60%（Google Analytics 4标准）",
+    "method": "按CURRENT_RULES.md映射核验",
+    "failure": "原条款未提供执行证据，不算通过"
+  }
+]

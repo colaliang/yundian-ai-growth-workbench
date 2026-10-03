@@ -108,11 +108,12 @@ def save(body):
             if not state['profile'].get('company'): raise ValueError('请先创建企业知识库')
             stage=payload.get('stage')
             if stage not in STAGES or not str(payload.get('name','')).strip(): raise ValueError('任务名称或阶段无效')
+            skill_key='seo-geo' if stage=='site-and-content' and (payload.get('skillId')=='yundian-growth-seo-geo' or any(w in str(payload['name']).upper() for w in ['SEO','GEO','AEO'])) else stage
             task={'id':uuid.uuid4().hex,'cycleId':str(payload.get('cycleId') or 'cycle-1'), 'stage':stage,
                   'name':str(payload['name'])[:500], 'instructions':str(payload.get('instructions',''))[:20000],
                   'inputs':str(payload.get('inputs',''))[:10000], 'acceptance':str(payload.get('acceptance',''))[:10000],
                   'status':'ready', 'artifact':None, 'createdAt':now,
-                  'skillId':registry()[stage]['id'], 'skillPath':skill_status()[stage]['installedPath']}
+                  'skillId':registry()[skill_key]['id'], 'skillPath':skill_status()[skill_key]['installedPath']}
             state['tasks'].append(task)
             atomic(BASE/'tasks'/f'{task["id"]}.json',json.dumps(task,ensure_ascii=False,indent=2))
             atomic(BASE/'workflows'/f'{task["id"]}.json',json.dumps({'id':task['id'],'version':1,'stage':stage,'goal':task['name'],'inputs':task['inputs'],'steps':task['instructions'],'acceptance':task['acceptance']},ensure_ascii=False,indent=2))
