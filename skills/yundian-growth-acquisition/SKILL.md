@@ -17,3 +17,14 @@ description: 在WorkBuddy客户项目执行LinkedIn主动开发的买家筛选�
 6. 实际回复、有效需求、拒绝或成交按leadId回流销售反馈，优化画像、产品和消息；名单或草稿存在不等于获客完成。
 
 交付：ICP、查询/筛选依据、实际目标名单、证据与缺口、开发草稿、跟进计划。主技能submit_result.py回写实际报告待验收，缺少关键输入/工具记录needs-input/blocked。付费供应商未授权时不得伪造联系人或统计。
+
+## 工作台模块契约（v0.13）
+
+- 对应入口：主动获客 · LinkedIn（acquisition）；只负责本模块，跨模块工作交接到对应技能。
+- 输入：目标市场、ICP、LinkedIn 来源/名单、产品资料、实际授权与跟进约束。
+- 执行：筛选 LinkedIn 买家；核验公司和联系人关系；去重并建立 leadId；准备个性化连接/开发信草稿；制定跟进计划；只记录真实执行回执。
+- 产物：买家清单、联系人核验、开发信草稿、跟进计划与实际触达记录。
+- 验收：不能编造联系人、已发送状态或回复；不默认批量发送；不包含广告报告及泛社媒获客。
+- 交接：按 leadId 向客户背调交接主体与来源，向销售反馈交接真实触达记录。
+
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
