@@ -17,7 +17,7 @@
 
 ## 路径一：通过技能生成自定义工作台
 
-1. 下载[完整技能包](dist/yundian-growth-skills-v0.13.zip)，或从[独立技能包目录](dist/skills-v0.13/)选择技能。
+1. 下载[完整技能包](dist/yundian-growth-skills-v0.14.zip)，或从[独立技能包目录](dist/skills-v0.14/)选择技能。
 2. 在 WorkBuddy 导入 `yundian-growth-workbench` 统筹技能及所需业务技能；总包不被客户端识别时，分别导入独立包。
 3. 创建或选择自己的 WorkBuddy 项目，先整理企业知识库。原生空间关联依赖客户端实际可用能力，不把本地文件创建当作云端关联完成。
 4. 提供需求并要求生成代码、启动和验证。例如：
@@ -81,7 +81,7 @@ WorkBuddy 在同一轮任务中完成可执行的准备、部署与验证，不�
 
 [模块契约](docs/skill-modules.zh-CN.md)列明输入、执行步骤、产物、验收及交接。增长总览、工作产物和项目设置由统筹技能维护。新任务预填模块要求，客户可修改；提示字段不代表实际数据。
 
-技能文件安装、宿主加载和外部工具授权是不同状态。页面不直接调用大模型，不能把复制任务指令当作执行完成。`submit_result.py` 将实际产物回写为待验收；客户验收后才完成任务，产物改变会使旧验收失效。
+技能文件安装、宿主加载和外部工具授权是不同状态。页面不直接调用大模型，不能把复制任务指令当作执行完成。`submit_result.mjs` 将实际产物回写为待验收；客户验收后才完成任务，产物改变会使旧验收失效。
 
 ## 知识库与数据
 
@@ -121,3 +121,15 @@ Node.js回归测试中包含 Python 技能回写兼容检查，因此运行完�
 [项目规划](docs/project-plan.zh-CN.md) · [统筹技能](skills/yundian-growth-workbench/SKILL.md) · [技能分工](docs/skill-modules.zh-CN.md) · [部署准备](docs/cloud-deployment.zh-CN.md)
 
 代码与技能采用 [MIT License](LICENSE)。云店+名称与logo遵守[品牌说明](BRANDING.md)。欢迎提交 Issue、Pull Request，或 Fork 后针对自己的客户业务扩展。
+
+## WorkBuddy 自动操作接口（v0.14）
+
+WorkBuddy 可使用 scripts/workbench.mjs 直接读取状态、安装技能、创建任务、保存业务记录/知识/验收台账与销售反馈；各动作复用后端校验。任务产物可由独立 submit_result.mjs 回写，不再依赖 Python。CLI 不执行模型、不直接发送 LinkedIn 消息；执行实际业务仍由宿主完成。操作应串行进行，避免与网页同时写入；完整测试仍包含旧 Python 兼容检查。
+
+```sh
+node scripts/workbench.mjs --root <客户目录> --command state
+node scripts/workbench.mjs --root <客户目录> --command save --action install-skills
+node scripts/workbench.mjs --root <客户目录> --command save --action task --payload <客户目录内的任务JSON文件>
+```
+
+[实现核对与后续方向](docs/implementation-review.zh-CN.md)逐项说明当前真实功能及外部执行边界。

@@ -11,7 +11,7 @@ description: 在WorkBuddy客户项目执行获客内容选题、制作、发布�
 
 SEO/GEO验收交给yundian-growth-seo-geo技能，建站实施交给建站技能。内容发布计划不等于已发布；客户授权且工具实际可用时才发布并保存回执、公开URL和读回。缺少发布工具可交付真实草稿，注明未发布。
 
-效果复盘按实际渠道/统计/销售反馈，记录时间窗、来源和缺失项，不能由内容生成数量推断获客增长。产物保存到客户项目，使用主技能submit_result.py回写待验收或阻塞原因；不自动外发或采购。
+效果复盘按实际渠道/统计/销售反馈，记录时间窗、来源和缺失项，不能由内容生成数量推断获客增长。产物保存到客户项目，使用主技能submit_result.mjs回写待验收或阻塞原因；不自动外发或采购。
 
 ## 工作台模块契约（v0.13）
 
@@ -22,4 +22,4 @@ SEO/GEO验收交给yundian-growth-seo-geo技能，建站实施交给建站技能
 - 验收：草稿与已发布分开；公开声明有依据；效果有来源，不以生成数量代替获客结果。
 - 交接：向 SEO与GEO 交接内容验收；向主动获客交接产品资料与沟通素材。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。

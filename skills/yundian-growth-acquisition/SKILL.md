@@ -16,7 +16,7 @@ description: 在WorkBuddy客户项目执行LinkedIn主动开发的买家筛选�
 5. 给跟进节奏、停止条件、客户负责人和反馈字段；不承诺回复率。不自动批量抓取、绕过平台限制、加好友或发消息。仅在用户实际授权、宿主工具及平台允许方式具备时执行，并记录真实回执；默认交付草稿与计划。
 6. 实际回复、有效需求、拒绝或成交按leadId回流销售反馈，优化画像、产品和消息；名单或草稿存在不等于获客完成。
 
-交付：ICP、查询/筛选依据、实际目标名单、证据与缺口、开发草稿、跟进计划。主技能submit_result.py回写实际报告待验收，缺少关键输入/工具记录needs-input/blocked。付费供应商未授权时不得伪造联系人或统计。
+交付：ICP、查询/筛选依据、实际目标名单、证据与缺口、开发草稿、跟进计划。主技能submit_result.mjs回写实际报告待验收，缺少关键输入/工具记录needs-input/blocked。付费供应商未授权时不得伪造联系人或统计。
 
 ## 工作台模块契约（v0.13）
 
@@ -27,4 +27,4 @@ description: 在WorkBuddy客户项目执行LinkedIn主动开发的买家筛选�
 - 验收：不能编造联系人、已发送状态或回复；不默认批量发送；不包含广告报告及泛社媒获客。
 - 交接：按 leadId 向客户背调交接主体与来源，向销售反馈交接真实触达记录。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。

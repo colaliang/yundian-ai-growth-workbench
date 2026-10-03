@@ -31,7 +31,7 @@ description: 在 WorkBuddy 客户项目核验 Facebook表单、网站、邮件�
 
 按 [REPORT.md](references/REPORT.md) 输出背调报告、逐条分析及优先汇总，保留未知字段、重复候选和待核问题。默认Markdown＋结构化JSON/CSV；客户要求Excel且宿主具备表格工具时生成三工作表并读回核对，不能将CSV改扩展名冒充Excel。
 
-将实际报告保存到客户项目，使用主技能 scripts/submit_result.py --root <项目目录> --task <任务ID> --file <报告文件> 回写待验收；没有任务ID直接保存。需要补输入/工具时记录needs-input/blocked，不模拟调查。
+将实际报告保存到客户项目，使用主技能 scripts/submit_result.mjs --root <项目目录> --task <任务ID> --file <报告文件> 回写待验收；没有任务ID直接保存。需要补输入/工具时记录needs-input/blocked，不模拟调查。
 
 跟进话术、询价问题和下一步是建议，不自动发信/拨号/CRM写回。实际联系、样品、报价、订单及拒绝原因由客户或授权CRM反馈，按leadId回流到渠道与产品机会；初步评分不是成交质量结果。
 
@@ -44,4 +44,4 @@ description: 在 WorkBuddy 客户项目核验 Facebook表单、网站、邮件�
 - 验收：联系人关系和采购意向各有证据；预测评分不冒充采购力或成交结果。
 - 交接：向销售反馈交接核验依据；向主动获客反馈画像或名单质量。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。

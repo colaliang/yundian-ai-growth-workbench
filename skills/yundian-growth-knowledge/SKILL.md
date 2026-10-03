@@ -19,7 +19,7 @@ description: 在 WorkBuddy 本地客户项目创建和治理企业增长知识�
 
 ## 执行与回写
 
-真实修改知识文件后读回、更新索引并报告资料缺口。没有任务ID时直接保存知识，无需伪造任务。若有任务ID，先保存实际整理报告，再使用主技能 scripts/submit_result.py --root <客户目录> --task <任务ID> --file <实际文件> 回写为待验收。缺少工具/授权时保持blocked/needs-input，不造检索结果或云端回执。
+真实修改知识文件后读回、更新索引并报告资料缺口。没有任务ID时直接保存知识，无需伪造任务。若有任务ID，先保存实际整理报告，再使用主技能 scripts/submit_result.mjs --root <客户目录> --task <任务ID> --file <实际文件> 回写为待验收。缺少工具/授权时保持blocked/needs-input，不造检索结果或云端回执。
 
 ## 工作台模块契约（v0.13）
 
@@ -30,4 +30,4 @@ description: 在 WorkBuddy 本地客户项目创建和治理企业增长知识�
 - 验收：保留原资料；事实有来源与审核状态；未验证的空间关联明确待验证。
 - 交接：向所有业务模块提供企业事实；接收已确认的客户反馈。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。

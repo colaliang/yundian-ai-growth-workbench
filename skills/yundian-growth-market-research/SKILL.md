@@ -27,7 +27,7 @@ description: 在 WorkBuddy 客户项目执行 B2B出海快速诊断或深度市�
 
 默认中文Markdown，结论先行、比较用表格，报告标明实际调研日期、范围、方法、来源与局限。署名使用客户确认的品牌或云店+ AI Growth；不自动添加联合品牌、私人联系方式、报价或服务升级广告。
 
-将真实报告保存到客户项目。调用主技能 `scripts/submit_result.py --root <项目目录> --task <任务ID> --file <报告文件>` 登记待验收，页面刷新读回；没有任务ID时直接保存并报告路径。受阻用 --status blocked/needs-input --reason 记录，不能模拟执行。
+将真实报告保存到客户项目。调用主技能 `scripts/submit_result.mjs --root <项目目录> --task <任务ID> --file <报告文件>` 登记待验收，页面刷新读回；没有任务ID时直接保存并报告路径。受阻用 --status blocked/needs-input --reason 记录，不能模拟执行。
 
 广告仅研究/只读诊断与官方后台跳转；不开户、改预算、建受众或投放。发信、发布、采购及外部写回按实际授权，付费数据源未授权不能冒充已查询。
 
@@ -40,4 +40,4 @@ description: 在 WorkBuddy 客户项目执行 B2B出海快速诊断或深度市�
 - 验收：每个关键结论能追溯来源与日期；标注未知项和研究局限。
 - 交接：向产品机会交接需求/竞争证据，向内容运营交接买家问题。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。

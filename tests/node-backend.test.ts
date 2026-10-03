@@ -66,3 +66,24 @@ test('HTTP API enforces host, origin, token and revision; static UI works',async
   } finally { await new Promise<void>(resolve=>server.close(()=>resolve())); fs.rmSync(root,{recursive:true,force:true}); }
 });
 
+test('WorkBuddy CLI creates data and Node skill writes real results without Python',()=>fixture(store=>{
+  const input=path.join(store.root,'payload.json');
+  const save=(action:string,payload:any={})=>{fs.writeFileSync(input,JSON.stringify(payload));return JSON.parse(execFileSync(process.execPath,['scripts/workbench.mjs','--root',store.root,'--command','save','--action',action,'--payload',input],{encoding:'utf8'}));};
+  save('profile',{company:'CLI客户',goal:'获客'});save('install-skills');
+  const state=save('task',{stage:'acquisition',name:'LinkedIn买家筛选',inputs:'客户ICP'}),task=state.tasks[0];
+  assert.equal(task.skillId,'yundian-growth-acquisition');
+  const report=path.join(store.root,'actual-report.md');fs.writeFileSync(report,'# 真实候选买家与来源');
+  const script=path.join(store.root,'.codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs');
+  execFileSync(process.execPath,[script,'--root',store.root,'--task',task.id,'--file',report]);
+  assert.equal(store.load().tasks[0].status,'needs-review');
+  save('review',{id:task.id,review:'客户确认来源'});
+  execFileSync(process.execPath,[script,'--root',store.root,'--task',task.id,'--status','needs-input','--reason','缺少授权名单']);
+  assert.equal(store.load().tasks[0].status,'needs-input');assert.equal(store.load().tasks[0].reviewedHash,undefined);
+  save('record',{stage:'buyer-check',name:'真实公司',source:'客户提供URL',leadId:'L1'});
+  save('feedback',{leadId:'L1',result:'待跟进'});
+  assert.equal(store.load().records.length,1);assert.equal(store.load().feedback.length,1);
+  const old=store.load().revision;save('knowledge',{title:'新资料',content:'客户事实',source:'客户'});
+  assert.throws(()=>execFileSync(process.execPath,['scripts/workbench.mjs','--root',store.root,'--command','save','--action','install-skills','--revision',old],{stdio:'pipe'}));
+  const outside=fs.mkdtempSync(path.join(os.tmpdir(),'yundian-outside-'));
+  try {const external=path.join(outside,'payload.json');fs.writeFileSync(external,'{}');assert.throws(()=>execFileSync(process.execPath,['scripts/workbench.mjs','--root',store.root,'--command','save','--action','task','--payload',external],{stdio:'pipe'}));}finally{fs.rmSync(outside,{recursive:true,force:true});}
+}));

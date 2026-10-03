@@ -15,7 +15,7 @@ description: 在 WorkBuddy 客户项目中依据真实获客与销售反馈制�
 
 将实际结果保存到客户项目内的 Markdown 文件，然后使用配套主技能的脚本登记：
 
-`python <主技能目录>/scripts/submit_result.py --root <客户项目目录> --task <实际任务ID> --file <实际产物文件>`
+`node <主技能目录>/scripts/submit_result.mjs --root <客户项目目录> --task <实际任务ID> --file <实际产物文件>`
 
 脚本会保存并读回产物、更新任务为待验收；不代替模型执行或客户验收。若任务被阻塞，用同一脚本的 `--status blocked --reason <具体原因>` 记录，不需要产物文件。网页刷新读取状态。知识任务没有任务ID时直接更新知识文件并索引来源，报告真实修改的路径。
 
@@ -28,4 +28,4 @@ description: 在 WorkBuddy 客户项目中依据真实获客与销售反馈制�
 - 验收：每项改进引用依据；缺反馈明确缺口；未经实际保存的任务只能标记建议。
 - 交接：将新任务分配回九个业务入口，保留上一轮 cycleId/leadId/opportunityId 关系。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。

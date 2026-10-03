@@ -30,7 +30,7 @@ Shopify读取 [SHOPIFY_STANDARD.md](references/SHOPIFY_STANDARD.md) 全部38项�
 
 产物变更后重新核验相关项；没有正式读回不能说上线通过。存在未修复P0不能技术验收通过；条件通过仅限客户明确接受的P1/P2延期，待验证不是通过。完整产出：全量台账、证据索引、整改/复查表、当前限制、配置移交及观察基线。
 
-保存真实Markdown报告和JSON台账到客户项目，主技能 submit_result.py 回写任务待验收；客户验收后完成。自动内容发布必须具备实际队列、时区、门槛、到期执行及读回日志，空队列或技能安装不算通过。广告只读，统计/外部写入需实际授权。
+保存真实Markdown报告和JSON台账到客户项目，主技能 submit_result.mjs 回写任务待验收；客户验收后完成。自动内容发布必须具备实际队列、时区、门槛、到期执行及读回日志，空队列或技能安装不算通过。广告只读，统计/外部写入需实际授权。
 
 ## 工作台模块契约（v0.13）
 
@@ -41,4 +41,4 @@ Shopify读取 [SHOPIFY_STANDARD.md](references/SHOPIFY_STANDARD.md) 全部38项�
 - 验收：通过必须有实际证据；不适用必须有理由；不得由部分通过推断整体达标。
 - 交接：向建站交接技术修复；向内容运营交接搜索意图、事实表达和内容缺口。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。

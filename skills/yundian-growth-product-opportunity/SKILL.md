@@ -29,7 +29,7 @@ description: 在 WorkBuddy 客户项目发现、比较并验证潜在爆款与B2
 
 输出中文Markdown机会报告、候选比较表及验证计划；结构见 [VALIDATION.md](references/VALIDATION.md)。可附 opportunities.json，稳定ID贯穿内容、渠道、leadId与销售反馈，保留版本和淘汰理由。
 
-将报告保存到客户项目，调用主技能 `scripts/submit_result.py --root <项目目录> --task <任务ID> --file <实际报告>` 回写待验收。无任务ID直接保存报告并说明路径；关键输入缺失用needs-input，工具缺失用blocked并说明可做的资料分析。不模拟查询或执行成功。
+将报告保存到客户项目，调用主技能 `scripts/submit_result.mjs --root <项目目录> --task <任务ID> --file <实际报告>` 回写待验收。无任务ID直接保存报告并说明路径；关键输入缺失用needs-input，工具缺失用blocked并说明可做的资料分析。不模拟查询或执行成功。
 
 客户真实询盘、样品、报价、成交、复购、退货及拒绝原因回流后修订评分。不要用模型预测替代反馈。广告仅只读诊断，外部动作遵循实际授权。内部成本不自动成为公开营销内容。
 
@@ -42,4 +42,4 @@ description: 在 WorkBuddy 客户项目发现、比较并验证潜在爆款与B2
 - 验收：未知成本不编造；评分与证据覆盖分开；潜在爆款只是待验证假设。
 - 交接：向建站/内容运营交接产品证据、定位及验证假设。
 
-存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.py 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
+存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
