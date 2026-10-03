@@ -29,7 +29,7 @@ def atomic(path, value):
 
 def digest():
     h=hashlib.sha256()
-    for p in sorted([DB, * (BASE/'tasks').glob('*.json'), * (BASE/'artifacts').glob('*.md'), * (BASE/'knowledge').glob('*.md')]):
+    for p in sorted([DB, * (BASE/'tasks').glob('*.json'), * (BASE/'artifacts').glob('*.md'), * (BASE/'knowledge').glob('*.md'), * (BASE/'records').glob('*.json'), * (BASE/'audits').glob('*.json')]):
         p.resolve().relative_to(ROOT)
         if p.is_file(): h.update(str(p.relative_to(BASE)).encode()); h.update(p.read_bytes())
     return h.hexdigest()
@@ -81,6 +81,14 @@ def load():
         state['tasks'].append(task)
     state['workspace'] = json.loads((BASE/'workspace.json').read_text(encoding='utf-8'))
     state['knowledge'] = [{'path': str(p.relative_to(BASE)), 'content':p.read_text(encoding='utf-8')} for p in sorted((BASE/'knowledge').glob('*.md'))]
+    state['records'] = []
+    for p in sorted((BASE/'records').glob('*.json')):
+        p.resolve().relative_to(ROOT)
+        state['records'].append(json.loads(p.read_text(encoding='utf-8')))
+    state['audits'] = []
+    for p in sorted((BASE/'audits').glob('*.json')):
+        p.resolve().relative_to(ROOT)
+        state['audits'].append({'id':p.stem, **json.loads(p.read_text(encoding='utf-8'))})
     state['skills'] = skill_status()
     state['revision'] = digest()
     return state
@@ -94,6 +102,36 @@ def save(body):
         now = datetime.now(timezone.utc).isoformat()
         if action == 'install-skills':
             install_skills()
+        elif action == 'record':
+            stage=payload.get('stage')
+            if stage not in STAGES: raise ValueError('Invalid stage')
+            if not str(payload.get('name','')).strip() or not str(payload.get('source','')).strip(): raise ValueError('请填写名称和真实来源')
+            row={k:str(v)[:20000] for k,v in payload.items() if k in ['stage','name','source','market','product','buyer','hypothesis','constraints','leadId','opportunityId','cycleId','result','next','url','platform','owner','status']}
+            row.update(id=uuid.uuid4().hex,createdAt=now)
+            atomic(BASE/'records'/f'{row['id']}.json',json.dumps(row,ensure_ascii=False,indent=2))
+        elif action == 'audit-create':
+            platform=payload.get('platform')
+            if platform not in ['shopify','wordpress']: raise ValueError('请选择站点平台')
+            audit_id=uuid.uuid4().hex
+            spec=importlib.util.spec_from_file_location('audit_init',APP/'skills/yundian-growth-seo-geo/scripts/init_audit.py')
+            mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+            folder=BASE/'audits'; folder.resolve().relative_to(ROOT); folder.mkdir(exist_ok=True)
+            mod.initialize(platform,folder/f'{audit_id}.json')
+        elif action == 'audit-item':
+            ident=str(payload.get('auditId',''))
+            if len(ident)!=32 or any(c not in '0123456789abcdef' for c in ident): raise ValueError('Invalid audit')
+            path=BASE/'audits'/f'{ident}.json'; path.resolve().relative_to(ROOT)
+            ledger=json.loads(path.read_text(encoding='utf-8'))
+            item=next((x for x in ledger['items'] if x['id']==payload.get('itemId')),None)
+            if not item: raise ValueError('检查项不存在')
+            result=payload.get('result')
+            if result not in ['通过','未通过','不适用','待验证']: raise ValueError('Invalid result')
+            evidence=str(payload.get('evidence','')).strip(); reason=str(payload.get('reason','')).strip()
+            if result=='通过' and not evidence: raise ValueError('通过必须填写实际证据')
+            if result=='不适用' and not reason: raise ValueError('不适用必须填写理由')
+            item.update(result=result,evidence=[evidence] if evidence else [],reason=reason,owner=str(payload.get('owner','')),remediation=str(payload.get('remediation','')),recheckDate=str(payload.get('recheckDate','')))
+            ledger['technicalConclusion']='待客户验收'
+            atomic(path,json.dumps(ledger,ensure_ascii=False,indent=2))
         elif action == 'profile':
             fields=['company','products','markets','persona','goal','brand','source','projectRef','spaceRef']
             profile={k:str(payload.get(k,'')).strip()[:12000] for k in fields}

@@ -48,6 +48,18 @@ class PersistenceTests(unittest.TestCase):
             self.save("install-skills", {})
         self.assertEqual(existing.read_text(encoding="utf-8"), "customer customization")
 
+    def test_stage_records_and_audit_evidence_gate(self):
+        self.save("record", {"stage": "product-opportunity", "name": "Candidate", "source": "customer product file", "hypothesis": "Needs validation"})
+        self.assertEqual(server.load()["records"][0]["hypothesis"], "Needs validation")
+        state = self.save("audit-create", {"platform": "shopify"})
+        audit = state["audits"][0]
+        self.assertEqual(len(audit["items"]), 38)
+        with self.assertRaises(ValueError):
+            self.save("audit-item", {"auditId": audit["id"], "itemId": "T01", "result": "通过"})
+        state = self.save("audit-item", {"auditId": audit["id"], "itemId": "T01", "result": "通过", "evidence": "Actual theme readback", "owner": "Customer"})
+        self.assertEqual(state["audits"][0]["items"][0]["result"], "通过")
+        self.assertEqual(state["audits"][0]["technicalConclusion"], "待客户验收")
+
     def test_initialization_preserves_customer_files(self):
         profile = server.BASE / "knowledge/profile.md"
         profile.write_text("customer facts", encoding="utf-8")
@@ -85,5 +97,6 @@ class PersistenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
