@@ -5,7 +5,7 @@ import os from 'node:os';
 import http from 'node:http';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FileWorkspace, createServer, STAGES } from '../server.ts';
+import { FileWorkspace, createServer, STAGES, releaseInfo } from '../server.ts';
 
 function fixture(run:(store:FileWorkspace)=>void) {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'yundian-node-'));
@@ -86,4 +86,16 @@ test('WorkBuddy CLI creates data and Node skill writes real results without Pyth
   assert.throws(()=>execFileSync(process.execPath,['scripts/workbench.mjs','--root',store.root,'--command','save','--action','install-skills','--revision',old],{stdio:'pipe'}));
   const outside=fs.mkdtempSync(path.join(os.tmpdir(),'yundian-outside-'));
   try {const external=path.join(outside,'payload.json');fs.writeFileSync(external,'{}');assert.throws(()=>execFileSync(process.execPath,['scripts/workbench.mjs','--root',store.root,'--command','save','--action','task','--payload',external],{stdio:'pipe'}));}finally{fs.rmSync(outside,{recursive:true,force:true});}
+}));
+test('avatar persists, resets, rejects active formats; releases do not downgrade',()=>fixture(store=>{
+  const save=(action:string,payload:any)=>store.save({revision:store.load().revision,action,payload});
+  const avatar='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uyAAAAAASUVORK5CYII=';
+  save('avatar',{avatar});save('profile',{company:'客户',goal:'获客'});
+  assert.equal(new FileWorkspace(store.root).load().settings.avatar,avatar);
+  assert.throws(()=>save('avatar',{avatar:'data:image/svg+xml;base64,PHN2Zz4='}));
+  assert.throws(()=>save('avatar',{avatar:'data:image/png;base64,YmFk'}));
+  save('avatar',{avatar:''});assert.equal(store.load().settings.avatar,'');
+  assert.equal(releaseInfo({version:'0.16.0',tag:'v0.16.0'},'0.15.0').available,true);
+  assert.equal(releaseInfo({version:'0.14.0',tag:'v0.14.0'},'0.15.0').available,false);
+  assert.throws(()=>releaseInfo({version:'0.16.0',tag:'arbitrary'}));
 }));

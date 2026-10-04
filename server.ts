@@ -6,6 +6,13 @@ import { fileURLToPath } from 'node:url';
 
 type Data = Record<string, any>;
 const APP = path.dirname(fileURLToPath(import.meta.url));
+const VERSION=JSON.parse(fs.readFileSync(path.join(APP,'package.json'),'utf8')).version;
+export function releaseInfo(value: Data,current=VERSION): Data {
+  if(!/^\d+\.\d+\.\d+$/.test(value.version)||value.tag!=='v'+value.version) throw Error('Invalid release metadata');
+  const a=value.version.split('.').map(Number),b=current.split('.').map(Number);
+  let available=false;for(let i=0;i<3;i++){if(a[i]!==b[i]){available=a[i]>b[i];break;}}
+  return {current,latest:value.version,tag:value.tag,available,notes:String(value.notes??'').slice(0,4000),url:'https://github.com/colaliang/yundian-ai-growth-workbench/releases/tag/'+value.tag};
+}
 export const STAGES = ['market-research','product-opportunity','site-and-content','seo-geo','content-operations','acquisition','buyer-check','sales-feedback','next-cycle'];
 const id = () => crypto.randomUUID().replaceAll('-', '');
 const validId = (v: string) => /^[a-f0-9]{32}$/.test(v);
@@ -97,16 +104,26 @@ export class FileWorkspace {
     state.knowledge=this.files('knowledge','.md').map(f=>({path:path.relative(this.base,f),content:this.read(f)}));
     state.records=this.files('records','.json').map(f=>this.json(f));
     state.audits=this.files('audits','.json').map(f=>({id:path.basename(f,'.json'),...this.json(f)}));
-    state.skills=this.skills(); state.revision=this.digest(); return state;
+    state.settings=state.settings??{}; state.version=VERSION; state.skills=this.skills(); state.revision=this.digest(); return state;
   }
   save(body: Data): Data {
     const current=this.load();
     if(body.revision!==current.revision) throw Error('资料已被其他操作更新，请刷新后重试');
     const p=body.payload??{},action=body.action;
-    const state={profile:current.profile,tasks:current.tasks,feedback:current.feedback};
+    const state={profile:current.profile,tasks:current.tasks,feedback:current.feedback,settings:current.settings};
     const now=new Date().toISOString(),text=(k:string,max=10000)=>String(p[k]??'').slice(0,max);
     const saveTask=(t:Data)=>this.put(path.join(this.base,'tasks',t.id+'.json'),t);
-    if(action==='install-skills') this.install();
+    if(action==='avatar') {
+      const avatar=text('avatar',500000);
+      if(avatar) {
+        const match=/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(avatar);
+        if(!match) throw Error('头像仅支持 PNG/JPEG/WebP');
+        const bytes=Buffer.from(match[2],'base64');
+        const valid=match[1]==='png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):match[1]==='jpeg'?bytes[0]===255&&bytes[1]===216&&bytes[2]===255:bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP';
+        if(!valid||bytes.length>262144||bytes.length<12) throw Error('头像格式无效或超过256KB');
+      }
+      state.settings.avatar=avatar;
+    } else if(action==='install-skills') this.install();
     else if(action==='record') {
       if(!STAGES.includes(p.stage)) throw Error('Invalid stage');
       if(!text('name').trim()||!text('source').trim()) throw Error('请填写名称和真实来源');
@@ -179,6 +196,13 @@ export function createServer(store: FileWorkspace,port: number) {
     try {
       if(req.method==='GET') {
         if(pathname==='/healthz') return respond({ok:true});
+        if(pathname==='/api/update') {
+          try {
+            const response=await fetch('https://raw.githubusercontent.com/colaliang/yundian-ai-growth-workbench/main/release.json',{signal:AbortSignal.timeout(5000)});
+            if(!response.ok) throw Error('Release unavailable');
+            return respond(releaseInfo(await response.json()));
+          } catch { return respond({error:'版本检查失败，请稍后重试或在WorkBuddy检查仓库版本'},502); }
+        }
         if(pathname==='/api/state') return respond({...store.load(),token,projectRoot:store.root});
         if(pathname.startsWith('/api/artifact/')) {
           const name=pathname.split('/').pop()!; if(!/^[a-f0-9]{32}\.md$/.test(name)) return respond({error:'Invalid artifact'},400);

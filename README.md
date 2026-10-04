@@ -133,3 +133,7 @@ node scripts/workbench.mjs --root <客户目录> --command save --action task --
 ```
 
 [实现核对与后续方向](docs/implementation-review.zh-CN.md)逐项说明当前真实功能及外部执行边界。
+
+## v0.15 设置与版本更新
+
+项目设置支持本地自定义头像（PNG/JPEG/WebP，256KB以内）和恢复默认。进入设置时检查官方公开release.json；失败如实提示，可手动重试。检查只发送固定公开请求，不上传客户数据。发布使用Git标签与版本清单。检测到更高版本时提供WorkBuddy更新指令：备份、核对Git改动、独立目录三方合并、保留客户数据与定制技能、验证后切换；冲突不能安全合并时保留当前版本并报告。无共同基线的非Git目录不强制覆盖。页面不自动更新代码。
