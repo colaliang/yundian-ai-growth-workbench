@@ -10,6 +10,7 @@
     "start": "node server.ts",
     "test": "node --test tests/node-backend.test.ts",
     "typecheck": "tsc --noEmit",
+    "build": "tsc --target ES2023 --module NodeNext --moduleResolution NodeNext --strict --esModuleInterop --skipLibCheck --outDir .build server.ts && node -e \"const fs=require('fs');fs.copyFileSync('.build/server.js','server.js');fs.rmSync('.build',{recursive:true,force:true});console.log('server.js generated')\"",
     "setup": "node scripts/launch.mjs"
   },
   "devDependencies": {

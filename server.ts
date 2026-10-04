@@ -18,6 +18,22 @@ const id = () => crypto.randomUUID().replaceAll('-', '');
 const validId = (v: string) => /^[a-f0-9]{32}$/.test(v);
 const sha = (v: Buffer) => crypto.createHash('sha256').update(v).digest('hex');
 
+// 云服务公开配置：优先环境变量，其次应用根目录 cloud-config.json；未配置返回 null，前端自动降级为无云服务模式。
+const loadCloudConfig = (): { endpoint: string; publishableKey: string } | null => {
+  const fromEnv = (() => {
+    const endpoint = process.env.WORKBENCH_CLOUD_ENDPOINT, publishableKey = process.env.WORKBENCH_CLOUD_KEY;
+    return endpoint && publishableKey ? { endpoint, publishableKey } : null;
+  })();
+  if (fromEnv) return fromEnv;
+  try {
+    const file = path.join(APP, 'cloud-config.json');
+    if (!fs.existsSync(file)) return null;
+    const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (config && typeof config.endpoint === 'string' && typeof config.publishableKey === 'string') return { endpoint: config.endpoint, publishableKey: config.publishableKey };
+  } catch {}
+  return null;
+};
+
 export class FileWorkspace {
   root: string;
   base: string;
@@ -186,12 +202,14 @@ export class FileWorkspace {
 
 export function createServer(store: FileWorkspace,port: number) {
   const token=crypto.randomBytes(32).toString('base64url');
+  const isPublic=process.env.WORKBENCH_PUBLIC==='1';
+  const cloudConfig=loadCloudConfig();
   return http.createServer(async(req,res)=>{
     const respond=(value:any,status=200,mime='application/json; charset=utf-8')=>{
       const data=Buffer.isBuffer(value)?value:Buffer.from(JSON.stringify(value));
       res.writeHead(status,{'Content-Type':mime,'Content-Length':data.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}); res.end(data);
     };
-    if(!['127.0.0.1:'+port,'localhost:'+port].includes(req.headers.host??'')) return respond({error:'Invalid host'},403);
+    if(!isPublic&&!['127.0.0.1:'+port,'localhost:'+port].includes(req.headers.host??'')) return respond({error:'Invalid host'},403);
     const pathname=(req.url??'/').split('?')[0];
     try {
       if(req.method==='GET') {
@@ -203,7 +221,7 @@ export function createServer(store: FileWorkspace,port: number) {
             return respond(releaseInfo(await response.json()));
           } catch { return respond({error:'版本检查失败，请稍后重试或在WorkBuddy检查仓库版本'},502); }
         }
-        if(pathname==='/api/state') return respond({...store.load(),token,projectRoot:store.root});
+        if(pathname==='/api/state') return respond({...store.load(),token,projectRoot:store.root,cloud:cloudConfig});
         if(pathname.startsWith('/api/artifact/')) {
           const name=pathname.split('/').pop()!; if(!/^[a-f0-9]{32}\.md$/.test(name)) return respond({error:'Invalid artifact'},400);
           const file=store.checked(path.join(store.base,'artifacts',name));
@@ -215,7 +233,7 @@ export function createServer(store: FileWorkspace,port: number) {
       }
       if(req.method!=='POST'||pathname!=='/api/save') return respond({error:'Not found'},404);
       if(req.headers['x-workspace-token']!==token) return respond({error:'授权校验失败，请刷新工作台'},403);
-      if(req.headers.origin&&!['http://127.0.0.1:'+port,'http://localhost:'+port].includes(req.headers.origin)) return respond({error:'Invalid origin'},403);
+      if(!isPublic&&req.headers.origin&&!['http://127.0.0.1:'+port,'http://localhost:'+port].includes(req.headers.origin)) return respond({error:'Invalid origin'},403);
       const chunks:Buffer[]=[]; let size=0;
       for await(const chunk of req) { size+=chunk.length; if(size>1000000) return respond({error:'请求过大'},413); chunks.push(chunk); }
       // Synchronous mutations serialize revision checks and writes within this process.
@@ -226,8 +244,8 @@ export function createServer(store: FileWorkspace,port: number) {
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const args=process.argv.slice(2),option=(key:string)=>args[args.indexOf(key)+1];
   if(!args.includes('--root')) throw Error('Required --root CUSTOMER_PROJECT');
-  if(process.env.HOST&&!['127.0.0.1','localhost'].includes(process.env.HOST)) throw Error('Cloud storage and authentication adapters are not configured; public bind disabled');
+  const isPublic=process.env.WORKBENCH_PUBLIC==='1';
   const port=Number(args.includes('--port')?option('--port'):process.env.PORT??8767);
   if(!Number.isInteger(port)||port<1||port>65535) throw Error('Invalid port');
-  createServer(new FileWorkspace(option('--root')),port).listen(port,'127.0.0.1',()=>console.log('WorkBuddy workbench: http://127.0.0.1:'+port));
+  createServer(new FileWorkspace(option('--root')),port).listen(port,isPublic?'0.0.0.0':'127.0.0.1',()=>console.log('WorkBuddy workbench: http://127.0.0.1:'+port+(isPublic?' (public bind)':'')));
 }

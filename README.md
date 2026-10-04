@@ -62,6 +62,26 @@ WorkBuddy 在同一轮任务中完成可执行的准备、部署与验证，不�
 
 目前支持的是**一键本地初始化与启动**。腾讯云公网一键部署尚未实现：需要先接入持久化数据库、对象存储、客户认证与空间隔离，并建立 WorkBuddy 本地任务连接层。当前后端仅监听本机，不能直接作为公网多客户服务。详见[云端扩展方案](docs/cloud-deployment.zh-CN.md)。
 
+### 公网发布模式与客户级云服务（v0.15）
+
+工作台支持在 WorkBuddy 中一键发布为在线应用并接入云服务，客户无需改代码：
+
+1. **公网发布**：用 `scripts/serve-public.mjs` 启动（等效于 `WORKBENCH_PUBLIC=1`，绑定 `0.0.0.0` 并放行反代域名；本地默认启动仍保持 127.0.0.1 严格校验）。发布沙箱的 Node 若低于 22.18（不支持 TypeScript 类型剥离），改用编译好的 `server.js`（`npm run build` 由 `server.ts` 生成）。
+2. **开通云服务**：在 WorkBuddy 中对应用执行开通，获得 `publicConfig`，把 `endpoint` 与 `publishableKey` 写入应用根目录 `cloud-config.json`（或环境变量 `WORKBENCH_CLOUD_ENDPOINT` / `WORKBENCH_CLOUD_KEY`），重新发布即可。
+3. **建云表**：在云数据库执行一次以下 SQL，销售反馈即可云端持久化：
+
+```sql
+CREATE TABLE sales_feedback (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, lead_id TEXT NOT NULL, result TEXT NOT NULL, source TEXT, reason TEXT, next TEXT, cycle_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+ALTER TABLE sales_feedback ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT ON TABLE public.sales_feedback TO authenticated, anon;
+CREATE POLICY sales_feedback_read_all ON sales_feedback FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY sales_feedback_insert_all ON sales_feedback FOR INSERT TO authenticated, anon WITH CHECK (true);
+```
+
+4. **自动启用**：配置下发后，总览页出现「AI 增长助手」（云服务大模型流式对话），销售反馈保存时同步写入云端并在反馈页显示「云端同步反馈」。未配置云服务时这些入口自动降级为提示，本地文件功能不受影响。
+
+云服务数据面校验访问来源域名，公网链接之外的环境（如本地 127.0.0.1）无法调用云服务，属正常防护。
+
 ## 工作台与技能分工
 
 统筹技能负责初始化、路由、工作流定义及任务回写；企业知识库与九个业务模块各有独立技能。

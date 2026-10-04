@@ -11,3 +11,4 @@ customer-data/
 .DS_Store
 Thumbs.db
 node_modules/
+cloud-config.json
