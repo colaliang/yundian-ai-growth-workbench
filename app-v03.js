@@ -1,12 +1,49 @@
 'use strict';
 const stages=[['market-research','市场调研','需求与竞争证据'],['product-opportunity','产品机会','机会与验证计划'],['site-and-content','建站','AI / Shopify / WordPress'],['seo-geo','SEO与GEO','搜索优化与证据验收'],['content-operations','内容运营','选题、制作与质量复盘'],['acquisition','主动获客','LinkedIn 主动开发'],['buyer-check','客户背调','匹配程度与风险'],['sales-feedback','销售反馈','跟进与成交结果'],['next-cycle','优化下一轮','反馈驱动新任务']];
 let updateInfo=null;let state,token,page='overview';const $=s=>document.querySelector(s);const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const button=(text,action,id='',primary=false)=>`<button data-action="${action}" data-id="${esc(id)}" class="${primary?'primary':''}">${esc(text)}</button>`;
+const button=(text,action,id='',primary=false)=>`<button type="button" data-action="${action}" data-id="${esc(id)}" class="${primary?'primary':''}">${esc(text)}</button>`;
 const label=s=>stages.find(x=>x[0]===s)?.[1]||s;const statuses={'ready':'待执行','needs-review':'待验收','completed':'已验收','blocked':'执行受阻','needs-input':'待补资料'};
 function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',4000);}
 async function refresh(){try{const r=await fetch('/api/state');if(!r.ok)throw Error('请使用 Node.js 启动工作台服务');state=await r.json();token=state.token;await loadCloudTasks();render();}catch(e){$('#main').innerHTML=`<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>请运行：npm start -- --root 客户项目目录 --port 8767</p></div>`;}}
 async function save(action,payload){const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Token':token},body:JSON.stringify({action,payload,revision:state.revision})});const value=await r.json();if(!r.ok)throw Error(value.error||'保存失败');state={...value,token,projectRoot:state.projectRoot,cloud:state.cloud};await mirrorAfterSave(action,payload);await loadCloudTasks();render();toast('已保存到项目文件');}
-function exportPdf(id){const content=cloudArtifacts[id]||'';const t=(state.tasks||[]).find(x=>x.id===id);const w=window.open('','_blank');if(!w){toast('请允许弹出窗口后再导出 PDF');return;}w.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(t?t.name:'工作产物')}</title><style>body{font-family:"Microsoft YaHei",sans-serif;line-height:1.9;padding:36px;color:#24344b}h1{font-size:20px;margin:0 0 18px}pre{white-space:pre-wrap;font-family:inherit;font-size:13px}</style></head><body><h1>${esc(t?t.name:'工作产物')}</h1><pre>${esc(content)}</pre></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),400);}
+/* 页面内按技能规范生成草稿（模式 A）：模型无联网工具，产出须人工核验 */
+let aiRun={id:null,busy:false,text:''};
+function knowledgeBrief(){const files=(state.knowledge||[]).filter(k=>/organization|brand-profile|products|target-markets|buyer-personas|profile\.md|websites/.test(k.path));return files.map(k=>'【'+k.path+'】\n'+String(k.content||'').slice(0,1400)).join('\n\n').slice(0,6000);}
+function stageRecords(stage){return (state.records||[]).filter(r=>r.stage===stage).slice(-5).map(r=>JSON.stringify(r)).join('\n').slice(0,2000);}
+async function generateDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===taskId);if(!t)return;const spec=(state.skills||{})[t.stage]||{};
+ const box=$('#ai-run');if(!box)return;const err=m=>{const x=$('#dialog-body .error');if(x)x.textContent=m;};
+ if(!cloudClient()){err('当前未配置云服务，AI 草稿不可用');return;}
+ aiRun={id:taskId,busy:true,text:''};box.innerHTML='';const el=document.createElement('div');el.className='ai-msg assistant';el.textContent='正在按技能规范生成…';box.appendChild(el);
+ /* 思考型模型首字可能等待 1-3 分钟，显示计时，避免看起来卡死 */
+ const startedAt=Date.now();const wait=setInterval(()=>{if(!aiRun.busy)return clearInterval(wait);if(!aiRun.text)el.textContent='正在按技能规范生成…（已等待 '+Math.round((Date.now()-startedAt)/1000)+' 秒；默认模型带思考过程，首字较慢）';},1000);
+ let model;try{model=(await ensureModels())[0];}catch(e){err(e.message||String(e));aiRun.busy=false;clearInterval(wait);return;}
+ const sys={role:'system',content:'你是云店+获客工作台的执行助手，严格按给定技能的规范产出中文工作草稿。规则：1) 事实与假设分开标注；2) 不掌握的实时数据（价格、规模、竞品动态）写成「待核验：需补充来源与日期」，禁止编造数字、来源或链接；3) 结构清晰可直接交业务人员补充；4) 结尾列出「缺口与下一步」。'};
+ const user={role:'user',content:['任务：'+t.name,'阶段：'+label(t.stage),'轮次：'+(t.cycleId||'cycle-1'),'输入要求：'+(spec.inputs||t.inputs||''),'执行步骤：'+(spec.instructions||t.instructions||''),'产物要求：'+(spec.outputs||''),'验收标准：'+(spec.acceptance||t.acceptance||''),'企业档案：'+JSON.stringify(state.profile||{}),'企业知识库：\n'+knowledgeBrief(),'本阶段已有记录：\n'+stageRecords(t.stage),'请输出 Markdown 草稿。'].join('\n\n')};
+ el.textContent='';
+ try{for await(const chunk of cloud.llm.chat.completions.create({model:model.id,stream:true,messages:[sys,user],temperature:1})){const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta&&chunk.choices[0].delta.content;if(d){aiRun.text+=d;el.textContent+=d;box.scrollTop=box.scrollHeight;}}}
+ catch(e){err(llmErrorMessage(e));}
+ finally{aiRun.busy=false;clearInterval(wait);if(!aiRun.text)el.textContent='';}}
+async function runSkillDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===taskId);if(!t)return;const spec=(state.skills||{})[t.stage]||{};
+ const lack=!(state.knowledge||[]).length&&!state.profile.company?'<p class="note">提示：当前企业知识库为空，草稿质量会明显下降。先在「企业知识库」补充真实资料，或使用「从知识库填充」完善企业档案。</p>':'';
+ modal('AI 草稿 · '+t.name,`<p class="note">按技能 <b>${esc(spec.title||'')}</b>（${esc(spec.id||'')}）的规范生成，输入：${esc(spec.inputs||t.inputs||'未指定')}。模型无联网工具，输出为<b>待核验草稿</b>，关键来源需人工补全或复制任务指令交由 WorkBuddy 联网执行。</p>${lack}<div id="ai-run" class="ai-chat"></div><div class="error" role="alert"></div><div class="actions"><button type="button" data-action="ai-run-save" data-id="${esc(taskId)}" class="primary">保存为产物</button><button type="button" data-action="ai-rerun" data-id="${esc(taskId)}">重新生成</button><button type="button" data-action="ai-run-pdf" data-id="${esc(taskId)}">导出 PDF</button><button type="button" data-action="ai-copy" data-id="${esc(taskId)}">复制全文</button></div>`);
+ await generateDraft(taskId);}
+async function autofillProfile(){const fm=document.querySelector('#dialog-body form');if(!fm)return;
+ if(!cloudClient()){toast('当前未配置云服务，无法自动提取');return;}
+ if(!(state.knowledge||[]).length){toast('企业知识库为空，请先添加真实资料再填充');return;}
+ toast('正在从知识库提取企业信息…');
+ const sys={role:'system',content:'你是企业信息抽取助手。只依据给定资料提取，禁止推测、补充或编造；资料中没有的字段返回空字符串。只输出 JSON，键与要求：company=企业主体与品牌名（中英文，不超过 40 字）；products=产品与服务（不超过 200 字）；markets=目标市场；persona=买家画像；goal=获客目标；brand=品牌与业务约束；source=资料来源与文件路径。不要写入联系人姓名、手机号、二维码等没有对应字段的信息。'};
+ const user={role:'user',content:'资料：\n'+knowledgeBrief()+'\n\n已有档案（可补全但不要覆盖已有值）：'+JSON.stringify(state.profile||{})};
+ let busy=true,t0=Date.now();const timer=setInterval(()=>{if(!busy){clearInterval(timer);return;}toast('正在从知识库提取企业信息…（已等待 '+Math.round((Date.now()-t0)/1000)+' 秒）');},5000);
+ try{const model=(await ensureModels())[0];let text='';
+  for await(const chunk of cloud.llm.chat.completions.create({model:model.id,stream:true,messages:[sys,user],temperature:0})){const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta&&chunk.choices[0].delta.content;if(d)text+=d;}
+  busy=false;clearInterval(timer);
+  const data=JSON.parse(text.replace(/^```json/i,'').replace(/```$/,'').trim());
+  let filled=0;for(const k of ['company','products','markets','persona','goal','brand','source']){const el=fm.querySelector('[name='+k+']');if(el&&!el.value&&typeof data[k]==='string'&&data[k]){el.value=data[k];filled++;}}
+  toast(filled?'已从知识库填充 '+filled+' 项，请核对后再保存':'知识库未提取到可填充内容，请手动补充');
+ }catch(e){busy=false;clearInterval(timer);toast('提取失败：'+(e.message||e));}}
+/* 产物 / 草稿导出 PDF：新开窗口打印，内容留在浏览器侧，不上传 */
+function printPdf(title,content){const w=window.open('','_blank');if(!w){toast('请允许弹出窗口后再导出 PDF');return;}w.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:"Microsoft YaHei",sans-serif;line-height:1.9;padding:36px;color:#24344b}h1{font-size:20px;margin:0 0 8px}.meta{font-size:12px;color:#7a8aa0;margin:0 0 18px}pre{white-space:pre-wrap;font-family:inherit;font-size:13px}</style></head><body><h1>${esc(title)}</h1><p class="meta">云店+获客工作台 · ${esc(state.profile.company||'')} · ${esc(new Date().toLocaleString('zh-CN'))}</p><pre>${esc(content)}</pre></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),400);}
+function exportPdf(id){const content=cloudArtifacts[id]||'';const t=(state.tasks||[]).find(x=>x.id===id);printPdf(t?t.name:'工作产物',content);}
 
 /* ===== WorkBuddy 云服务（LLM + Database，配置由服务端 /api/state 下发）===== */
 let cloud=null,cloudModelList=null,aiChat={history:[],conversationId:String(Date.now()),busy:false};
@@ -91,7 +128,7 @@ if(action==='check-update')checkUpdate();
 if(action==='update-guide')modal('WorkBuddy 更新部署',`<div class="prompt">${esc(updatePrompt())}</div><p class="note">交给当前项目 WorkBuddy 执行；此页面不会直接更新代码。</p>`);
 if(action==='install-skills'){save('install-skills',{}).catch(e=>toast(e.message));}
 if(action==='nav'){page=id;render();$('#sidebar').classList.remove('open');if(page==='settings'&&!updateInfo)checkUpdate();}
-if(action==='profile'){const p=state.profile;form('企业知识库与项目资料',`<div class="form-grid">${[['company','企业名称'],['products','产品 / 服务'],['markets','目标市场'],['persona','买家画像'],['goal','获客目标'],['brand','品牌与业务约束'],['source','资料来源 / 文件路径'],['projectRef','WorkBuddy 项目名称 / 链接'],['spaceRef','关联空间名称 / 链接']].map(([k,v])=>field(k,v,p[k]||'',k==='goal'||k==='source')).join('')}</div><p class="note">填写名称/链接不会自动关联云端空间；需在 WorkBuddy 中完成并验证。</p>`,'profile');}
+if(action==='profile'){const p=state.profile;form('企业知识库与项目资料',`<div class="form-grid">${[['company','企业名称'],['products','产品 / 服务'],['markets','目标市场'],['persona','买家画像'],['goal','获客目标'],['brand','品牌与业务约束'],['source','资料来源 / 文件路径'],['projectRef','WorkBuddy 项目名称 / 链接'],['spaceRef','关联空间名称 / 链接']].map(([k,v])=>field(k,v,p[k]||'',k==='goal'||k==='source')).join('')}</div><div class="actions">${state.cloud?button('从知识库填充','profile-autofill'):''}</div><p class="note">「从知识库填充」只读取项目 knowledge 目录下已保存的真实资料，由云端模型提取，资料中没有的字段留空；只填充未填写项，保存前请逐项核对。填写名称/链接不会自动关联云端空间；需在 WorkBuddy 中完成并验证。</p>`,'profile');}
 if(action==='record'){form('保存阶段业务记录',field('name','记录名称')+field('source','真实来源URL / 文件 / 客户反馈')+field('cycleId','轮次ID','cycle-1')+(recordFields[page]||[]).map(([k,n])=>field(k,n,'',true)).join(''),'record',{stage:page});}
 if(action==='record-task'){const r=state.records.find(x=>x.id===id);form('从业务记录创建技能任务',field('name','任务名称',r.name)+field('inputs','实际输入与上游资料',JSON.stringify(r,null,2),true)+field('instructions','具体工作步骤','读取对应技能，核对输入、证据与缺口，保存真实报告。',true)+field('acceptance','验收标准','来源可追溯，事实与假设分开，缺项明确，实际产物可读回。',true),'task',{stage:r.stage,cycleId:r.cycleId||'cycle-1'});}
 if(action==='audit-new'){form('创建全量验收台账','<label>站点平台<select name="platform"><option value="shopify">Shopify · 38项</option><option value="wordpress">WordPress · 26项</option></select></label>','audit-create');}
@@ -100,9 +137,15 @@ if(action==='new-task'||action==='service'){const stage=stages.some(x=>x[0]===id
 if(action==='knowledge-skill'){const instruction=`读取并调用 ${state.skills.knowledge.installedPath}，使用 yundian-growth-knowledge 技能。项目目录：${state.projectRoot}。整理 growth-workspace/knowledge/ 中的真实企业资料、来源、审核状态与缺口，保留原资料；优先使用当前本地知识库；客户需要外部资料时再关联ima或腾讯乐享并核验授权。没有工具时说明缺口，不伪造关联成功。实际更新知识文件和索引，然后刷新工作台。`;modal('企业知识库技能',`<div class="prompt">${esc(instruction)}</div><p class="note">在 WorkBuddy 当前项目执行。技能文件状态：${state.skills.knowledge.status==='installed'?'已安装，宿主加载待验证':'待安装或版本不同'}。</p>`);}
 if(action==='knowledge')form('添加真实知识资料',field('title','资料标题')+field('content','实际资料内容','',true)+field('source','来源 URL / 文件路径'),'knowledge');
 if(action==='feedback')form('记录真实销售反馈',`${field('leadId','稳定线索标识')}${field('source','获客渠道 / 上游产物')}${field('cycleId','轮次标识','cycle-1')}${field('result','实际联系 / 报价 / 成交结果')}${field('reason','有效或无效原因','',true)}${field('next','下一轮改进建议','',true)}`,'feedback',{},syncFeedbackToCloud);
-if(action==='task'){const t=state.tasks.find(t=>t.id===id);modal(t.name,`<p>${esc(label(t.stage))} · ${esc(statuses[t.status])}${t.cloud?' · 云端同步':''}</p><div class="prompt">${esc(prompt(t))}</div><p class="note">复制指令到 WorkBuddy 当前项目执行；这里不会模拟调用模型。WorkBuddy 执行后产物会回写到云端，此处刷新即可看到。</p><div class="actions">${button('复制 WorkBuddy 指令','copy',id,true)}${button('保存实际产物','artifact',id)}${(t.artifact||cloudArtifacts[t.id])?button('查看产物','view-artifact',id):''}${t.artifact?button('记录验收','review',id):''}</div>`);}
+if(action==='task'){const t=state.tasks.find(t=>t.id===id);modal(t.name,`<p>${esc(label(t.stage))} · ${esc(statuses[t.status])}${t.cloud?' · 云端同步':''}</p><div class="prompt">${esc(prompt(t))}</div><p class="note">复制指令到 WorkBuddy 当前项目执行；这里不会模拟调用模型。WorkBuddy 执行后产物会回写到云端，此处刷新即可看到。</p><div class="actions">${button('复制 WorkBuddy 指令','copy',id,true)}${state.cloud?button('AI 生成草稿','ai-run',id):''}${button('保存实际产物','artifact',id)}${(t.artifact||cloudArtifacts[t.id])?button('查看产物','view-artifact',id):''}${t.artifact?button('记录验收','review',id):''}</div>`);}
 if(action==='view-artifact')viewArtifact(id);
 if(action==='pdf')exportPdf(id);
+if(action==='ai-run')runSkillDraft(id);
+if(action==='ai-rerun')generateDraft(id);
+if(action==='ai-run-save'){if(!aiRun.text.trim()){toast('还没有生成内容');return;}save('artifact',{id,content:aiRun.text}).then(()=>{$('#dialog').close();toast('草稿已保存为产物，状态待验收');}).catch(err=>toast(err.message));}
+if(action==='ai-run-pdf'){if(!aiRun.text.trim()){toast('还没有生成内容');return;}const t=state.tasks.find(x=>x.id===id);printPdf((t?t.name:'工作产物')+' · AI 草稿（待核验）',aiRun.text);}
+if(action==='ai-copy'){navigator.clipboard.writeText(aiRun.text||'').then(()=>toast('已复制草稿全文')).catch(()=>toast('请手动选中复制'));}
+if(action==='profile-autofill')autofillProfile();
 if(action==='ai')aiPanel();
 if(action==='ai-new'){aiChat.conversationId=(crypto.randomUUID?crypto.randomUUID():String(Date.now()));aiChat.history=[];const f=$('#dialog-body .error');if(f)f.textContent='';renderAiChat();}
 if(action==='copy'){navigator.clipboard.writeText(prompt(state.tasks.find(t=>t.id===id))).then(()=>toast('指令已复制，请在 WorkBuddy 当前项目执行')).catch(()=>toast('请手动选中并复制任务指令'));}
