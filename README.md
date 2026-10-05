@@ -68,7 +68,7 @@ WorkBuddy 在同一轮任务中完成可执行的准备、部署与验证，不�
 
 1. **公网发布**：用 `scripts/serve-public.mjs` 启动（等效于 `WORKBENCH_PUBLIC=1`，绑定 `0.0.0.0` 并放行反代域名；本地默认启动仍保持 127.0.0.1 严格校验）。发布沙箱的 Node 若低于 22.18（不支持 TypeScript 类型剥离），改用编译好的 `server.js`（`npm run build` 由 `server.ts` 生成）。
 2. **开通云服务**：在 WorkBuddy 中对应用执行开通，获得 `publicConfig`，把 `endpoint` 与 `publishableKey` 写入应用根目录 `cloud-config.json`（或环境变量 `WORKBENCH_CLOUD_ENDPOINT` / `WORKBENCH_CLOUD_KEY`），重新发布即可。
-3. **建云表**：在云数据库执行一次以下 SQL，销售反馈即可云端持久化：
+3. **建云表**：在云数据库执行以下 SQL，销售反馈、任务、产物与企业档案即可云端持久化（任务与产物是 WorkBuddy 回写真实结果的通道，也是发布后不丢数据的保障）：
 
 ```sql
 CREATE TABLE sales_feedback (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, lead_id TEXT NOT NULL, result TEXT NOT NULL, source TEXT, reason TEXT, next TEXT, cycle_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
@@ -76,7 +76,28 @@ ALTER TABLE sales_feedback ENABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT ON TABLE public.sales_feedback TO authenticated, anon;
 CREATE POLICY sales_feedback_read_all ON sales_feedback FOR SELECT TO authenticated, anon USING (true);
 CREATE POLICY sales_feedback_insert_all ON sales_feedback FOR INSERT TO authenticated, anon WITH CHECK (true);
+
+CREATE TABLE workbench_tasks (id TEXT PRIMARY KEY, stage TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ready', cycle_id TEXT, instructions TEXT, inputs TEXT, acceptance TEXT, skill_id TEXT, skill_path TEXT, artifact TEXT, review TEXT, reviewed_hash TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), finished_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE workbench_artifacts (task_id TEXT PRIMARY KEY, content TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE workbench_profile (id TEXT PRIMARY KEY, company TEXT, products TEXT, markets TEXT, persona TEXT, goal TEXT, brand TEXT, source TEXT, project_ref TEXT, space_ref TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+ALTER TABLE workbench_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workbench_artifacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workbench_profile ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.workbench_tasks TO authenticated, anon;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.workbench_artifacts TO authenticated, anon;
+GRANT SELECT, INSERT, UPDATE ON TABLE public.workbench_profile TO authenticated, anon;
+CREATE POLICY workbench_tasks_select ON workbench_tasks FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY workbench_tasks_insert ON workbench_tasks FOR INSERT TO authenticated, anon WITH CHECK (true);
+CREATE POLICY workbench_tasks_update ON workbench_tasks FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
+CREATE POLICY workbench_artifacts_select ON workbench_artifacts FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY workbench_artifacts_insert ON workbench_artifacts FOR INSERT TO authenticated, anon WITH CHECK (true);
+CREATE POLICY workbench_artifacts_update ON workbench_artifacts FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
+CREATE POLICY workbench_profile_select ON workbench_profile FOR SELECT TO authenticated, anon USING (true);
+CREATE POLICY workbench_profile_insert ON workbench_profile FOR INSERT TO authenticated, anon WITH CHECK (true);
+CREATE POLICY workbench_profile_update ON workbench_profile FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
 ```
+
+任务与产物采用「本地文件 + 云库互为备份」：本地文件仍是单机真实来源，云库让已发布实例跨设备、跨发布保留数据，也让 WorkBuddy 可以把会话内执行的结果回写到云库供页面读取。同一任务以 `updated_at` 较新者为准，多端同时编辑按最后写入生效。
 
 4. **自动启用**：配置下发后，总览页出现「AI 增长助手」（云服务大模型流式对话），销售反馈保存时同步写入云端并在反馈页显示「云端同步反馈」。未配置云服务时这些入口自动降级为提示，本地文件功能不受影响。
 
