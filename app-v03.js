@@ -8,7 +8,12 @@ async function refresh(){try{const r=await fetch('/api/state');if(!r.ok)throw Er
 async function save(action,payload){const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Token':token},body:JSON.stringify({action,payload,revision:state.revision})});const value=await r.json();if(!r.ok)throw Error(value.error||'保存失败');state={...value,token,projectRoot:state.projectRoot,cloud:state.cloud};await mirrorAfterSave(action,payload);await loadCloudTasks();render();toast('已保存到项目文件');}
 /* 页面内按技能规范生成草稿（模式 A）：模型无联网工具，产出须人工核验 */
 let aiRun={id:null,busy:false,text:''};
-function knowledgeBrief(){const files=(state.knowledge||[]).filter(k=>/organization|brand-profile|products|target-markets|buyer-personas|profile\.md|websites/.test(k.path));return files.map(k=>'【'+k.path+'】\n'+String(k.content||'').slice(0,1400)).join('\n\n').slice(0,6000);}
+/* 知识底座文件：企业事实为所有阶段共用，另按阶段追加该阶段相关资料，让内容生成 / SEO·GEO 能吃到对应知识 */
+const BASE_KB=/organization|brand-profile|products|target-markets|buyer-personas|profile\.md|websites|企业事实|品牌/;
+const STAGE_KB={'market-research':['market','competitor','竞品','市场','调研'],'product-opportunity':['product','产品','机会','竞品'],'site-and-content':['site','website','内容','content','建站','页面'],'seo-geo':['seo','geo','keyword','关键词','页面','事实卡','fact','内容'],'content-operations':['content','选题','内容','发布','素材','表现'],'acquisition':['buyer','linkedin','获客','线索','lead','客户'],'buyer-check':['buyer','客户','背调','线索','customer'],'sales-feedback':['feedback','销售','crm','反馈'],'next-cycle':['复盘','反馈','sop','总结']};
+function knowledgeBrief(stage){const keys=STAGE_KB[stage]||[];const hit=k=>keys.some(x=>String(k.path).toLowerCase().indexOf(x.toLowerCase())>=0);
+ const files=(state.knowledge||[]).filter(k=>BASE_KB.test(k.path)||hit(k));
+ return files.map(k=>'【'+k.path+'】\n'+String(k.content||'').slice(0,1800)).join('\n\n').slice(0,12000);}
 function stageRecords(stage){return (state.records||[]).filter(r=>r.stage===stage).slice(-5).map(r=>JSON.stringify(r)).join('\n').slice(0,2000);}
 async function generateDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===taskId);if(!t)return;const spec=(state.skills||{})[t.stage]||{};
  const box=$('#ai-run');if(!box)return;const err=m=>{const x=$('#dialog-body .error');if(x)x.textContent=m;};
@@ -17,8 +22,8 @@ async function generateDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===ta
  /* 思考型模型首字可能等待 1-3 分钟，显示计时，避免看起来卡死 */
  const startedAt=Date.now();const wait=setInterval(()=>{if(!aiRun.busy)return clearInterval(wait);if(!aiRun.text)el.textContent='正在按技能规范生成…（已等待 '+Math.round((Date.now()-startedAt)/1000)+' 秒；默认模型带思考过程，首字较慢）';},1000);
  let model;try{model=(await ensureModels())[0];}catch(e){err(e.message||String(e));aiRun.busy=false;clearInterval(wait);return;}
- const sys={role:'system',content:'你是云店+获客工作台的执行助手，严格按给定技能的规范产出中文工作草稿。规则：1) 事实与假设分开标注；2) 不掌握的实时数据（价格、规模、竞品动态）写成「待核验：需补充来源与日期」，禁止编造数字、来源或链接；3) 结构清晰可直接交业务人员补充；4) 结尾列出「缺口与下一步」。'};
- const user={role:'user',content:['任务：'+t.name,'阶段：'+label(t.stage),'轮次：'+(t.cycleId||'cycle-1'),'输入要求：'+(spec.inputs||t.inputs||''),'执行步骤：'+(spec.instructions||t.instructions||''),'产物要求：'+(spec.outputs||''),'验收标准：'+(spec.acceptance||t.acceptance||''),'企业档案：'+JSON.stringify(state.profile||{}),'企业知识库：\n'+knowledgeBrief(),'本阶段已有记录：\n'+stageRecords(t.stage),'请输出 Markdown 草稿。'].join('\n\n')};
+ const sys={role:'system',content:'你是云店+获客工作台的执行助手，严格按给定技能的规范产出中文工作草稿。规则：1) 事实与假设分开标注；2) 不掌握的实时数据（价格、规模、竞品动态）写成「待核验：需补充来源与日期」，禁止编造数字、来源或链接；3) 结构清晰可直接交业务人员补充；4) 结尾列出「缺口与下一步」；5) 知识库给了本阶段相关资料（关键词、可引用事实卡、历史选题与表现、竞品资料）时必须优先引用，并标注来自哪个文件；资料里没有的关键词、排名、数据一律写待核验，不得自行编造。'};
+ const user={role:'user',content:['任务：'+t.name,'阶段：'+label(t.stage),'轮次：'+(t.cycleId||'cycle-1'),'输入要求：'+(spec.inputs||t.inputs||''),'执行步骤：'+(spec.instructions||t.instructions||''),'产物要求：'+(spec.outputs||''),'验收标准：'+(spec.acceptance||t.acceptance||''),'企业档案：'+JSON.stringify(state.profile||{}),'企业知识库（企业事实 + 本阶段相关资料）：\n'+knowledgeBrief(t.stage),'本阶段已有记录：\n'+stageRecords(t.stage),'请输出 Markdown 草稿。'].join('\n\n')};
  el.textContent='';
  try{for await(const chunk of cloud.llm.chat.completions.create({model:model.id,stream:true,messages:[sys,user],temperature:1})){const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta&&chunk.choices[0].delta.content;if(d){aiRun.text+=d;el.textContent+=d;box.scrollTop=box.scrollHeight;}}}
  catch(e){err(llmErrorMessage(e));}

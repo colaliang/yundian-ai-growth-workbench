@@ -121,6 +121,33 @@ CREATE POLICY workbench_profile_update ON workbench_profile FOR UPDATE TO authen
 
 需要真实市场数据、竞品价格、买家背景时，用模式 B；需要快速搭出结构、清单与访谈提纲时，用模式 A。
 
+#### 知识库按阶段取用
+
+AI 草稿不是把所有知识一股脑塞给模型，而是分两层：
+
+- **企业事实层**（organization、brand-profile、products、target-markets、buyer-personas、profile.md、websites）：所有阶段共用
+- **阶段资料层**：按任务阶段追加，命中文件名关键词即纳入
+
+| 阶段 | 额外纳入的知识 |
+|---|---|
+| 市场调研 | market / competitor / 竞品 / 市场 / 调研 |
+| 产品机会 | product / 产品 / 机会 |
+| 建站 | site / website / 内容 / 建站 / 页面 |
+| SEO与GEO | seo / geo / keyword / 关键词 / 页面 / 事实卡 / fact |
+| 内容运营 | content / 选题 / 内容 / 发布 / 素材 / 表现 |
+| 主动获客 | buyer / linkedin / 获客 / 线索 / lead |
+| 客户背调 | buyer / customer / 客户 / 背调 / 线索 |
+| 销售反馈 | feedback / crm / 销售 / 反馈 |
+| 优化下一轮 | 复盘 / 反馈 / sop / 总结 |
+
+所以做内容生成和 SEO/GEO 时，把关键词库、可引用事实卡、历史选题与表现放进 `growth-workspace/knowledge/`，文件名带上对应关键词，该阶段的草稿就会引用它们，并标注来自哪个文件。资料里没有的关键词、排名、数据一律写待核验，不许编。
+
+「从知识库填充」只取企业事实层，不会被阶段资料污染。
+
+#### 知识原件放哪
+
+项目资料库（共享盘）存原件，工作台读 `growth-workspace/knowledge/` 下的 md，两者由会话侧同步。建议目录：`01-企业事实`、`02-客户与线索`、`03-渠道与投放`、`04-竞品与市场`、`05-内容资产`、`06-SEO与GEO`、`07-复盘与SOP`。每份文件带来源、日期、审核状态、负责人、适用范围、敏感级别；客户名单与手机号属受限信息，默认不进共享盘。
+
 ## 工作台与技能分工
 
 统筹技能负责初始化、路由、工作流定义及任务回写；企业知识库与九个业务模块各有独立技能。
