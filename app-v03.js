@@ -9,11 +9,34 @@ async function save(action,payload){const r=await fetch('/api/save',{method:'POS
 /* 页面内按技能规范生成草稿（模式 A）：模型无联网工具，产出须人工核验 */
 let aiRun={id:null,busy:false,text:''};
 /* 知识底座文件：企业事实为所有阶段共用，另按阶段追加该阶段相关资料，让内容生成 / SEO·GEO 能吃到对应知识 */
-const BASE_KB=/organization|brand-profile|products|target-markets|buyer-personas|profile\.md|websites|企业事实|品牌/;
-const STAGE_KB={'market-research':['market','competitor','竞品','市场','调研'],'product-opportunity':['product','产品','机会','竞品'],'site-and-content':['site','website','内容','content','建站','页面'],'seo-geo':['seo','geo','keyword','关键词','页面','事实卡','fact','内容'],'content-operations':['content','选题','内容','发布','素材','表现'],'acquisition':['buyer','linkedin','获客','线索','lead','客户'],'buyer-check':['buyer','客户','背调','线索','customer'],'sales-feedback':['feedback','销售','crm','反馈'],'next-cycle':['复盘','反馈','sop','总结']};
-function knowledgeBrief(stage){const keys=STAGE_KB[stage]||[];const hit=k=>keys.some(x=>String(k.path).toLowerCase().indexOf(x.toLowerCase())>=0);
+const BASE_KB=/organization|brand-profile|products|target-markets|buyer-personas|profile\.md|websites|企业事实|品牌|governance|治理/;
+const STAGE_KB={'market-research':['market','competitor','竞品','市场','调研'],'product-opportunity':['product','产品','机会','竞品'],'site-and-content':['site','website','内容','content','建站','页面'],'seo-geo':['seo','geo','keyword','关键词','页面','事实卡','fact','内容'],'content-operations':['content','选题','内容','发布','素材','表现'],'acquisition':['buyer','linkedin','获客','线索','lead','客户'],'buyer-check':['buyer','客户','背调','线索','customer'],'sales-feedback':['feedback','销售','crm','反馈'],'next-cycle':['复盘','反馈','sop','总结','cases','案例']};
+const CASE_KB=/cases-and-results|案例/;
+/* 送进模型前强制脱敏：知识库里有对外口径记录（含真实号码），仅靠提示词约束不够，
+   在上下文出口拦一道，保证号码、微信号、二维码等不会进入模型输入，从源头避免被复述进对外正文。
+   注意：对外公开的服务价格属于可引用事实，不脱敏，否则草稿无法引用真价格。 */
+function redactForModel(s){return String(s??'')
+ .replace(/1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}/g,'[手机号已脱敏]')
+ .replace(/(?<!\d)0\d{2,3}[-\s]?\d{7,8}(?!\d)/g,'[座机已脱敏]')
+ .replace(/(微信|vx|weixin|wechat)[\s:：]*[A-Za-z][-_A-Za-z0-9]{5,19}/gi,'$1：[账号已脱敏]')
+ .replace(/(邮箱|email)[\s:：]*[\w.+-]+@[\w.-]+\.\w+/gi,'$1：[邮箱已脱敏]')
+ .replace(/二维码/g,'[二维码]');}
+/* 上下文分配：企业事实文件优先，再按阶段追加；每份按剩余预算动态取额，
+   避免固定 1800 字符把价格表后半段、治理规则尾段砍掉。总预算 16000 字符。 */
+const KB_BUDGET=16000,KB_MIN=1400,KB_MAX=4200;
+function knowledgeBrief(stage){const keys=STAGE_KB[stage]||[];
+ const hit=k=>keys.some(x=>String(k.path).toLowerCase().indexOf(x.toLowerCase())>=0)||(stage!=='knowledge'&&CASE_KB.test(k.path));
  const files=(state.knowledge||[]).filter(k=>BASE_KB.test(k.path)||hit(k));
- return files.map(k=>'【'+k.path+'】\n'+String(k.content||'').slice(0,1800)).join('\n\n').slice(0,12000);}
+ const ordered=files.filter(k=>BASE_KB.test(k.path)).concat(files.filter(k=>!BASE_KB.test(k.path)));
+ const parts=[];let left=KB_BUDGET;
+ ordered.forEach((k,i)=>{
+  if(left<=0||!k)return;
+  const cap=Math.max(KB_MIN,Math.min(KB_MAX,Math.floor(left/(ordered.length-i))));
+  const raw=String(k.content||'');
+  const body=raw.length>cap?raw.slice(0,cap)+'\n（本文件较长已截断，完整内容见 '+k.path+'）':raw;
+  const chunk='【'+k.path+'】\n'+body;
+  parts.push(chunk);left-=chunk.length;});
+ return redactForModel(parts.join('\n\n'));}
 function stageRecords(stage){return (state.records||[]).filter(r=>r.stage===stage).slice(-5).map(r=>JSON.stringify(r)).join('\n').slice(0,2000);}
 async function generateDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===taskId);if(!t)return;const spec=(state.skills||{})[t.stage]||{};
  const box=$('#ai-run');if(!box)return;const err=m=>{const x=$('#dialog-body .error');if(x)x.textContent=m;};
@@ -23,7 +46,7 @@ async function generateDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===ta
  const startedAt=Date.now();const wait=setInterval(()=>{if(!aiRun.busy)return clearInterval(wait);if(!aiRun.text)el.textContent='正在按技能规范生成…（已等待 '+Math.round((Date.now()-startedAt)/1000)+' 秒；默认模型带思考过程，首字较慢）';},1000);
  let model;try{model=(await ensureModels())[0];}catch(e){err(e.message||String(e));aiRun.busy=false;clearInterval(wait);return;}
  const sys={role:'system',content:'你是云店+获客工作台的执行助手，严格按给定技能的规范产出中文工作草稿。规则：1) 事实与假设分开标注；2) 不掌握的实时数据（价格、规模、竞品动态）写成「待核验：需补充来源与日期」，禁止编造数字、来源或链接；3) 结构清晰可直接交业务人员补充；4) 结尾列出「缺口与下一步」；5) 知识库给了本阶段相关资料（关键词、可引用事实卡、历史选题与表现、竞品资料）时必须优先引用，并标注来自哪个文件；资料里没有的关键词、排名、数据一律写待核验，不得自行编造；6) 受限信息不得展开：联系人姓名、个人手机号、微信二维码、报价、客户名单等，正文写成「联系方式 / 报价见企业微信，不写入对外内容」，确需提醒时在结尾「内部备注」用占位符点出，禁止把完整号码或名单写进正文。'};
- const user={role:'user',content:['任务：'+t.name,'阶段：'+label(t.stage),'轮次：'+(t.cycleId||'cycle-1'),'输入要求：'+(spec.inputs||t.inputs||''),'执行步骤：'+(spec.instructions||t.instructions||''),'产物要求：'+(spec.outputs||''),'验收标准：'+(spec.acceptance||t.acceptance||''),'企业档案：'+JSON.stringify(state.profile||{}),'企业知识库（企业事实 + 本阶段相关资料）：\n'+knowledgeBrief(t.stage),'本阶段已有记录：\n'+stageRecords(t.stage),'请输出 Markdown 草稿。'].join('\n\n')};
+ const user={role:'user',content:['任务：'+t.name,'阶段：'+label(t.stage),'轮次：'+(t.cycleId||'cycle-1'),'输入要求：'+(spec.inputs||t.inputs||''),'执行步骤：'+(spec.instructions||t.instructions||''),'产物要求：'+(spec.outputs||''),'验收标准：'+(spec.acceptance||t.acceptance||''),'企业档案：'+redactForModel(JSON.stringify(state.profile||{})),'企业知识库（企业事实 + 本阶段相关资料）：\n'+knowledgeBrief(t.stage),'本阶段已有记录：\n'+stageRecords(t.stage),'请输出 Markdown 草稿。'].join('\n\n')};
  el.textContent='';
  try{for await(const chunk of cloud.llm.chat.completions.create({model:model.id,stream:true,messages:[sys,user],temperature:1})){const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta&&chunk.choices[0].delta.content;if(d){aiRun.text+=d;el.textContent+=d;box.scrollTop=box.scrollHeight;}}}
  catch(e){err(llmErrorMessage(e));}
@@ -37,7 +60,7 @@ async function autofillProfile(){const fm=document.querySelector('#dialog-body f
  if(!(state.knowledge||[]).length){toast('企业知识库为空，请先添加真实资料再填充');return;}
  toast('正在从知识库提取企业信息…');
  const sys={role:'system',content:'你是企业信息抽取助手。只依据给定资料提取，禁止推测、补充或编造；资料中没有的字段返回空字符串。只输出 JSON，键与要求：company=企业主体与品牌名（中英文，不超过 40 字）；products=产品与服务（不超过 200 字）；markets=目标市场；persona=买家画像；goal=获客目标；brand=品牌与业务约束；source=资料来源与文件路径。不要写入联系人姓名、手机号、二维码等没有对应字段的信息。'};
- const user={role:'user',content:'资料：\n'+knowledgeBrief()+'\n\n已有档案（可补全但不要覆盖已有值）：'+JSON.stringify(state.profile||{})};
+ const user={role:'user',content:'资料：\n'+knowledgeBrief()+'\n\n已有档案（可补全但不要覆盖已有值）：'+redactForModel(JSON.stringify(state.profile||{}))};
  let busy=true,t0=Date.now();const timer=setInterval(()=>{if(!busy){clearInterval(timer);return;}toast('正在从知识库提取企业信息…（已等待 '+Math.round((Date.now()-t0)/1000)+' 秒）');},5000);
  try{const model=(await ensureModels())[0];let text='';
   for await(const chunk of cloud.llm.chat.completions.create({model:model.id,stream:true,messages:[sys,user],temperature:0})){const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta&&chunk.choices[0].delta.content;if(d)text+=d;}
