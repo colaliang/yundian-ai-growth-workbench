@@ -5,16 +5,23 @@
 发布 `wb-public` 目录时，`installCmd` 留空、`startCmd` 必须是这一行：
 
 ```
-WORKBENCH_PUBLIC=1 node server.js --root /workspace
+node server.js --root /workspace --public
 ```
 
-## 三个已踩过的坑
+> **不要再依赖环境变量**。环境变量写法是 `WORKBENCH_PUBLIC=1 node server.js …`，
+> 但 `WORKBENCH` / `WORKBUDDY` 两个名字极易手误（2026-10-08 就因为敲成 `WORKBUDDY_PUBLIC`
+> 导致线上 403 Invalid host），且部署端不一定用 shell 解析 `VAR=1 node …` 这类前缀。
+> 现已在 `server.js` 增加显式开关 `--public`，不依赖环境变量名、不依赖 shell 解析。
+> 本地 A/B 实测：带 `--public` → 200；不带 → `403 {"error":"Invalid host"}`。
+
+## 四个已踩过的坑
 
 | 坑 | 现象 | 正确做法 |
 |---|---|---|
 | 用了 `package.json` 的 start | `ERR_UNKNOWN_FILE_EXTENSION ".ts"`，端口不监听 | 必须显式传 `startCmd: node server.js`，云端不编译 TypeScript |
-| 没设 `WORKBENCH_PUBLIC=1` | 发布返回 `verified: true`，但页面报 `403 Invalid host` | startCmd 前缀 `WORKBENCH_PUBLIC=1`，让服务绑 `0.0.0.0` 并跳过 host 校验 |
+| 公网开关没生效 | 发布返回 `verified: true`，但页面报 `403 Invalid host` | startCmd 用 `--public` 参数，不要依赖环境变量 |
 | `--root` 传了 `wb-public` 本身 | 服务内部会再拼一层 `growth-workspace`，知识库读不到 | `--root` 传部署根目录（云端为 `/workspace`），服务自己拼 `/workspace/growth-workspace` |
+| 误信 `verified: true` | 以为发布成功，实际页面 403 | 发布后必须按文末判据实际请求一次 |
 
 ## 另外两个已踩过的坑（2026-10-08 补充）
 

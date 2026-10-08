@@ -15,6 +15,14 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 const APP = path.dirname(fileURLToPath(import.meta.url));
+/* 公网模式判定（云店+ 定制 2026-10-08）：
+   踩坑记录：代码里读的是 WORKBENCH_PUBLIC，而发布说明里一直写的是 WORKBUDDY_PUBLIC
+   （名字记错了），此前能跑通只是因为部署端恰好注入过同名变量；重建沙箱后注入消失，
+   直接 403 Invalid host。结论：不能依赖「环境变量名是否猜对」，也不能依赖
+   部署端是否用 shell 解析「VAR=1 node …」这种前缀。
+   改为显式开关 --public，startCmd 写成「node server.js --root /workspace --public」，
+   两种环境变量仍保留兼容。 */
+const publicMode = () => process.env.WORKBENCH_PUBLIC === '1' || process.env.WORKBUDDY_PUBLIC === '1' || process.argv.includes('--public');
 const VERSION = JSON.parse(fs.readFileSync(path.join(APP, 'package.json'), 'utf8')).version;
 export function releaseInfo(value, current = VERSION) {
     if (!/^\d+\.\d+\.\d+$/.test(value.version) || value.tag !== 'v' + value.version)
@@ -527,7 +535,7 @@ export class FileWorkspace extends WorkspaceStore {
 }
 export function createServer(store, port) {
     const token = crypto.randomBytes(32).toString('base64url');
-    const isPublic = process.env.WORKBENCH_PUBLIC === '1';
+    const isPublic = publicMode();
     const cloudConfig = loadCloudConfig();
     return http.createServer(async (req, res) => {
         const respond = (value, status = 200, mime = 'application/json; charset=utf-8') => {
@@ -652,7 +660,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const args = process.argv.slice(2), option = (key) => args[args.indexOf(key) + 1];
     if (!args.includes('--root'))
         throw Error('Required --root CUSTOMER_PROJECT');
-    const isPublic = process.env.WORKBENCH_PUBLIC === '1';
+    const isPublic = publicMode();
     const port = Number(args.includes('--port') ? option('--port') : process.env.PORT ?? 8767);
     if (!Number.isInteger(port) || port < 1 || port > 65535)
         throw Error('Invalid port');
