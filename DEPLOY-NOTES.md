@@ -45,6 +45,34 @@ node server.js --root /workspace --public
 
 静态检查查不出这类问题，所以发布流程第 3 步固化了运行时冒烟测试。
 
+## 本地怎么起（和线上是两套）
+
+线上：`node server.js --root /workspace --public`
+本地：**`sh scripts/start-local.sh`**（默认 8767 端口，可加参数改端口）
+
+```bash
+sh scripts/start-local.sh          # http://127.0.0.1:8767/
+sh scripts/start-local.sh 8801     # 换端口
+```
+
+等价的完整命令（在 `wb-public` 目录下执行，`--root` 指**客户项目根目录**，不是 wb-public 本身）：
+
+```bash
+node server.js --root /c/Users/KEJIE/WorkBuddy/2026-10-04-23-14-55 --port 8767
+```
+
+**不要用 `npm start` 的历史印象判断**：`package.json` 的 start 原本是 `node server.ts`，
+而发布目录里只有编译产物 `server.js`、没有 `server.ts`，所以旧版 `npm start` 必然报
+`Cannot find module '...\wb-public\server.ts'`。
+之前错误页上印的「请运行 npm start -- ...」就是这条坏命令，用户照着敲一定失败。
+现已把 `wb-public/package.json` 的 start 改为 `node server.js`，`npm start -- --root ... --port ...`
+也可用；但更省事的是直接用 `start-local.sh`。
+
+> **两处 package.json 的 start 不一致是有意为之，不要统一**：
+> 代码仓库里有 `server.ts` 源码，且 Node 22.18+ 支持直接执行 `.ts`，所以主线保持 `node server.ts`；
+> 发布目录 `wb-public` 只有编译产物 `server.js`，必须改成 `node server.js`。
+> 同步文件到仓库时**跳过 `wb-public/package.json`**。
+
 ## 为什么必须显式传 startCmd
 
 `package.json` 里：

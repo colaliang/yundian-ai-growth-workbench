@@ -135,7 +135,7 @@ async function refresh(){const m=$('#main');
  catch(e){
   const alive=await appAlive();
   const tip=alive?'应用已在线，但读取项目资料失败，请点下方「重新连接」。':'应用正在冷启动或暂时不可用（线上空闲后会休眠），点「重新连接」通常即可成功。';
-  if(m)m.innerHTML=`<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>${esc(tip)}</p><p class="note">本地运行：<code>npm start -- --root 客户项目目录 --port 8767</code><br>线上部署：启动命令须为 <code>WORKBUDDY_PUBLIC=1 node server.js --root /workspace</code></p><div class="actions">${button('重新连接','retry-state','',true)}</div></div>`;}}
+  if(m)m.innerHTML=`<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>${esc(tip)}</p><p class="note">本地启动（在 wb-public 目录下）：<code>node server.js --root 客户项目目录 --port 8767</code><br>注意不要用 <code>npm start</code>：它执行的是 <code>node server.ts</code>，而发布目录里只有编译产物 server.js，会直接报 Cannot find module。<br>线上部署：启动命令须为 <code>node server.js --root /workspace --public</code></p><div class="actions">${button('重新连接','retry-state','',true)}</div></div>`;}}
 /* ---- save：移植到 v0.15.0 时遗漏，但被 8 处写操作引用（表单、产物、头像、任务、技能安装…），
    缺失会让线上所有保存动作抛 ReferenceError，且页面上看不出原因。补回时按新版调整：
    /api/save 只回 store.load()，不含 token / projectRoot / cloud / kbCheck，需就地保留；
