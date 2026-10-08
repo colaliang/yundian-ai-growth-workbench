@@ -31,7 +31,7 @@ function redactForModel(s){return String(s??'')
  .replace(/二维码/g,'[二维码]');}
 /* 上下文分配：企业事实文件优先，再按阶段追加；每份按剩余预算动态取额，
    避免固定字符上限把价格表后半段、治理规则尾段砍掉。 */
-const KB_BUDGET=16000,KB_MIN=1400,KB_MAX=4200;
+const KB_BUDGET=20000,KB_MIN=1400,KB_MAX=6000;
 function knowledgeBrief(stage){const keys=STAGE_KB[stage]||[];
  const hit=k=>keys.some(x=>String(k.path).toLowerCase().indexOf(x.toLowerCase())>=0)||(stage!=='knowledge'&&CASE_KB.test(k.path));
  const files=(state.knowledge||[]).filter(k=>BASE_KB.test(k.path)||hit(k));
