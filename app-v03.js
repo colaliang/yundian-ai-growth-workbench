@@ -109,7 +109,46 @@ const recordFields={
 'sales-feedback':[['leadId','稳定线索ID'],['result','实际联系/报价/成交结果'],['next','下一轮建议']],
 'next-cycle':[['hypothesis','改进假设'],['result','实际销售反馈依据'],['next','验证任务与停止标准']]
 };
-async function refresh(){try{state=await api.request('/api/state');token=state.token;render();}catch(e){const m=$('#main');if(m)m.innerHTML=`<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>请运行：npm start -- --root 客户项目目录 --port 8767</p></div>`;}}
+/* ---- 连接容错（云店+ 定制 2026-10-08；放在本文件而非 web/api.js，避免主线更新被覆盖）----
+   现象：页面报「Failed to execute 'json' on 'Response': Unexpected end of JSON input」。
+   根因：线上部署在网关后会休眠，首个请求冷启动实测 7 秒，此时网关偶发返回「200 + 空响应体」，
+   而 api.request 无条件 response.json() 会抛错，且原实现只请求一次、失败不重试，
+   页面就此永久停在错误页（用户必须手动刷新）。
+   处理：GET 不带 JSON Content-Type → 先取文本判空再解析 → 退避重试 →
+   用 /healthz 区分「应用冷启动中」与「接口异常」→ 给出可点击的重连按钮，并按场景给提示。 */
+const STATE_RETRY=[0,1000,3000];
+async function fetchState(onProgress){let last;
+ for(let i=0;i<STATE_RETRY.length;i++){
+  if(STATE_RETRY[i]){if(onProgress)onProgress(i);await new Promise(r=>setTimeout(r,STATE_RETRY[i]));}
+  try{
+   const r=await fetch('/api/state',{cache:'no-store',headers:{Accept:'application/json'}});
+   const text=await r.text();
+   if(!text.trim())throw Error('服务端返回了空响应体（HTTP '+r.status+'）');
+   let value;try{value=JSON.parse(text);}catch{throw Error('服务端返回了非 JSON 内容：'+text.slice(0,60));}
+   if(!r.ok)throw Error((value&&value.error)||('请求失败（HTTP '+r.status+'）'));
+   return value;
+  }catch(e){last=e;}}
+ throw last;}
+async function appAlive(){try{const r=await fetch('/healthz',{cache:'no-store'});return r.ok;}catch{return false;}}
+async function refresh(){const m=$('#main');
+ try{state=await fetchState(i=>{if(m)m.innerHTML=`<div class="panel"><h1>正在重新连接项目资料…</h1><p>第 ${i+1} 次尝试，线上应用冷启动可能需要几秒。</p></div>`;});token=state.token;render();return;}
+ catch(e){
+  const alive=await appAlive();
+  const tip=alive?'应用已在线，但读取项目资料失败，请点下方「重新连接」。':'应用正在冷启动或暂时不可用（线上空闲后会休眠），点「重新连接」通常即可成功。';
+  if(m)m.innerHTML=`<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>${esc(tip)}</p><p class="note">本地运行：<code>npm start -- --root 客户项目目录 --port 8767</code><br>线上部署：启动命令须为 <code>WORKBUDDY_PUBLIC=1 node server.js --root /workspace</code></p><div class="actions">${button('重新连接','retry-state','',true)}</div></div>`;}}
+/* ---- save：移植到 v0.15.0 时遗漏，但被 8 处写操作引用（表单、产物、头像、任务、技能安装…），
+   缺失会让线上所有保存动作抛 ReferenceError，且页面上看不出原因。补回时按新版调整：
+   /api/save 只回 store.load()，不含 token / projectRoot / cloud / kbCheck，需就地保留；
+   旧版依赖的 mirrorAfterSave / loadCloudTasks 在新版不存在，已去掉；
+   同样先取文本判空再解析，避免网关空响应体导致 "Unexpected end of JSON input"。 */
+async function save(action,payload){
+ const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Token':token},body:JSON.stringify({action,payload,revision:state.revision})});
+ const text=await r.text();
+ if(!text.trim())throw Error('保存失败：服务端返回了空响应体（HTTP '+r.status+'）');
+ let value;try{value=JSON.parse(text);}catch{throw Error('保存失败：服务端返回了非 JSON 内容：'+text.slice(0,60));}
+ if(!r.ok)throw Error((value&&value.error)||('保存失败（HTTP '+r.status+'）'));
+ state={...value,token,projectRoot:state.projectRoot,cloud:state.cloud,kbCheck:state.kbCheck};
+ render();toast('已保存到项目文件');}
 /* ---- 以下两个随草稿功能移植时一并带回（新版主线未提供，被 ai-run-pdf / generateDraft 引用）---- */
 function stageRecords(stage){return (state.records||[]).filter(r=>r.stage===stage).slice(-5).map(r=>JSON.stringify(r)).join('\n').slice(0,2000);}
 function printPdf(title,content){const w=window.open('','_blank');if(!w){toast('请允许弹出窗口后再导出 PDF');return;}w.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:"Microsoft YaHei",sans-serif;line-height:1.9;padding:36px;color:#24344b}h1{font-size:20px;margin:0 0 8px}.meta{font-size:12px;color:#7a8aa0;margin:0 0 18px}pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:14px;margin:0}</style></head><body><h1>${esc(title)}</h1><p class="meta">企业：${esc(state.profile.company||'未填写')} ｜ 生成时间：${new Date().toLocaleString('zh-CN')}</p><pre>${esc(content)}</pre></body></html>`);w.document.close();setTimeout(()=>{w.focus();w.print();},300);}
@@ -132,6 +171,7 @@ function field(name,title,value='',area=false){return `<label>${esc(title)}${are
 function form(title,body,action,extra={},onSaved){modal(title,`<form>${body}<div class="error" role="alert"></div><div class="actions"><button type="submit" class="primary">保存</button></div></form>`);$('#dialog-body form').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button[type=submit]');b.disabled=true;try{const payload={...Object.fromEntries(new FormData(e.target)),...extra};await save(action,payload);$('#dialog').close();if(onSaved)onSaved(payload);}catch(err){e.target.querySelector('.error').textContent=err.message;}finally{b.disabled=false;}};}
 function prompt(t){if(t.invocation)return t.invocation+(t.receiptInstructions||'');return `必须读取并使用对应功能技能：${t.skillId||state.skills[t.stage].id}\n技能文件：${t.skillPath||state.skills[t.stage].installedPath}\n若未安装，先在工作台项目与设置安装技能。\n使用 yundian-growth-workbench 主技能，在当前 WorkBuddy 客户项目执行真实任务。\n项目目录：${state.projectRoot}\n企业：${state.profile.company}\n获客目标：${state.profile.goal}\n阶段：${label(t.stage)}\n轮次：${t.cycleId}\n任务：${t.name}\n输入/上游产物：${t.inputs||'先读取 knowledge 目录，缺失则补资料'}\n步骤/工具：${t.instructions||'按客户目标定制实际工作流'}\n验收：${t.acceptance||'产物可读、来源可追溯；未知事实标记待确认'}\n将实际产物写入 growth-workspace/artifacts/${t.id}.md，并更新任务记录。执行失败不得模拟成功。广告只读；外部动作按实际授权。默认读取本地知识；使用外部来源时核验宿主授权和出处。\n完成实际工作后运行：node \"${state.projectRoot}/.codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs\" --root \"${state.projectRoot}\" --task ${t.id} --file \"${state.projectRoot}/growth-workspace/artifacts/${t.id}.md\"。受阻时用 --status blocked --reason 说明。然后刷新工作台并记录客户验收。`;}
 root.addEventListener('click',e=>{const b=e.target.closest('[data-action]');if(!b)return;const {action,id}=b.dataset;
+if(action==='retry-state'){refresh();return;}
 if(action==='expert-detail'){const expert=state.serviceCatalog.experts.find(e=>e.id===id);if(expert)modal('专家服务',expertDetail(expert,esc)+button('复制联系电话','expert-copy',id));}
 if(action==='expert-copy'){const expert=state.serviceCatalog.experts.find(e=>e.id===id);if(expert)navigator.clipboard.writeText(expert.contact).then(()=>toast('联系电话已复制')).catch(()=>modal('手动复制联系电话',`<pre>${esc(expert.contact)}</pre>`));}
 if(action==='delivery-create')save('delivery-create',{templateId:id}).catch(e=>toast(e.message));
