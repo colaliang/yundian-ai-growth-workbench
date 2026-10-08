@@ -31,7 +31,7 @@ for(let attempt=0;attempt<40&&!exited;attempt++) {
     // Let bind failures finish before opening an existing server on the same port.
     await new Promise(resolve=>setTimeout(resolve,250));
     if(exited) break;
-    console.log('客户目录：'+root+'\n工作台：'+url+'\n关闭此进程停止服务；首次使用先创建企业知识库。');
+    console.log('客户目录：'+root+'\n工作台：'+url+'\n关闭此进程停止服务；首次使用先创建企业知识库。设置可导出本地快照；在线备份未配置，保持关闭。更新前检查本地修改并单独保留客户技能。');
     if(!args.includes('--no-open')) {
       const command=process.platform==='win32'?'rundll32.exe':process.platform==='darwin'?'open':'xdg-open';
       const parameters=process.platform==='win32'?['url.dll,FileProtocolHandler',url]:[url];

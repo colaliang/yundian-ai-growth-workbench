@@ -1,225 +1,82 @@
-# 云店+ AI Growth Workbench
+# 云店+外贸获客工作台
 
-面向跨境 B2B 外贸工厂和跨境卖家的开源获客工作台与 WorkBuddy 技能包。客户可以**通过技能生成自己的工作台**，也可以**直接使用开源工作台，并按业务需要扩展优化**。
+面向跨境 B2B 外贸工厂和跨境卖家的开源客户工作台。客户自主定制流程，WorkBuddy 执行实际技能与工具操作；工作台管理企业知识、任务、成果、验收与销售反馈。
 
-**市场调研 → 产品机会 → 建站与内容 → 主动获客 → 客户背调 → 销售反馈 → 优化下一轮**
+**市场调研 → 产品机会 → 建站与内容 → 获客 → 客户背调 → 销售反馈 → 优化下一轮**
 
-工作台管理知识、任务、产物和反馈；WorkBuddy 执行实际技能与工具操作。默认空白项目，客户定义目标、步骤和验收规则。
+本地客户独立目录是默认数据来源。网页提供工作台、企业知识库、获客技能、成果中心、专家与陪跑及设置；每日清单和定时计划按真实数据管理。网页不提供模型聊天或 AI 草稿调用。
 
-## 两种使用方式
+## 路径一：由 WorkBuddy 技能生成自定义工作台
 
-| 路径 | 适合谁 | 如何开始 |
-|---|---|---|
-| 技能生成自定义工作台 | 希望按自己的业务、品牌和流程搭建 | 安装统筹与所需功能技能，在 WorkBuddy 项目中提供需求，生成并验证实际代码 |
-| 直接使用开源工作台 | 希望先使用现成能力，再逐步修改 | 在 WorkBuddy 项目中发送部署指令，由 WorkBuddy 自动获取、配置、启动并验证 |
-
-两条路径共用企业知识库、十个功能技能及任务回写契约。客户可以修改界面、增加模块、定制工作流或接入已授权工具；新增能力应同步定义输入、产物、验收与回写方式。
-
-## 路径一：通过技能生成自定义工作台
-
-1. 下载[完整技能包](dist/yundian-growth-skills-v0.14.zip)，或从[独立技能包目录](dist/skills-v0.14/)选择技能。
-2. 在 WorkBuddy 导入 `yundian-growth-workbench` 统筹技能及所需业务技能；总包不被客户端识别时，分别导入独立包。
-3. 创建或选择自己的 WorkBuddy 项目，先整理企业知识库。原生空间关联依赖客户端实际可用能力，不把本地文件创建当作云端关联完成。
-4. 提供需求并要求生成代码、启动和验证。例如：
+在自己的 WorkBuddy 项目发送：
 
 ```text
-使用 yundian-growth-workbench 和对应功能技能，为当前项目生成客户自定义获客工作台。
-先建立企业、品牌、产品、市场和买家画像知识库，保留来源与缺口。
-以云店+开源工作台为基础，保留知识库和九个业务模块，按我的业务调整品牌、字段和工作流。
-采用 Node.js + TypeScript，数据保存到我指定的本地项目目录。
-每个业务模块调用对应技能，保存真实任务、产物、验收和销售反馈。
-提供一键本地启动入口，实际启动并检查页面、文件持久化及任务回写。
-不能模拟工具接入或执行结果；缺少权限或资料时标记待补充。
+请自动获取 https://github.com/colaliang/yundian-ai-growth-workbench.git 的获客技能，读取统筹技能 yundian-growth-workbench 及配套 registry.json。
+先检查当前项目规则、授权目录和已有定制，安装实际技能到本项目 .codebuddy/skills；冲突保留客户原文件，按 manifest 比较版本与 SHA-256，先在独立官方版本目录暂存再审阅合并。
+为我的业务生成可运行的客户自定义获客工作台，以当前项目本地目录保存资料。先建立企业、品牌、产品、网站、市场、画像和来源知识库，资料不足标记待补充。
+保留市场调研、产品机会、建站、SEO、GEO、内容运营、社媒运营、Facebook广告、Google Ads、LinkedIn主动开发、邮件开发、客户背调、销售反馈和增长复盘技能入口。
+自动准备运行环境、生成代码并实际启动，检查页面、窄屏、真实文件持久化、回执与验收；隔离测试不写入我的客户数据。
+复制指令只表示待执行，真实工具结果须文件回写、读回并待我验收；缺能力如实报告。
+返回实际地址、客户目录、验证结果与未完成项，后续由 WorkBuddy 按我的要求扩展。
 ```
 
-技能是搭建与执行规范，不是已生成的应用。实际结果取决于客户需求、宿主工具与授权；生成后需要检查运行和数据回写。
+技能是执行和建设规范，生成的应用须独立验收。支持按需导入独立技能包或总包；客户端安装、加载、实际执行分别验证。
 
-## 路径二：通过 WorkBuddy 自动使用开源工作台
+## 路径二：由 WorkBuddy 自动部署开源工作台
 
-在 WorkBuddy 当前项目中发送以下指令，后续获取代码、检查运行环境、初始化目录、安装项目技能、启动服务和验证均由 WorkBuddy 自动完成。客户无需手动克隆、解压、执行命令或点击安装按钮；后续扩展优化也直接在 WorkBuddy 对话中提出。
+在自己的 WorkBuddy 项目发送：
 
 ```text
 请自动部署并启动云店+开源获客工作台：
 https://github.com/colaliang/yundian-ai-growth-workbench.git
-
-以当前 WorkBuddy 项目为客户工作空间，自动完成以下工作：
-1. 检查当前项目规则、授权目录和已有文件。将工作台代码放在独立子目录，保留已有客户资料；已有仓库有本地修改时不覆盖。
-2. 自动获取开源项目，检查 Node.js 22.18+ 及技能辅助脚本所需的 Python 3.10+。缺少运行环境时，在实际授权范围内使用可用安装方式准备；无法完成时说明具体缺口，不要求我逐项手动执行部署命令。
-3. 使用当前项目的客户目录保存数据，自动初始化知识库，整理现有企业、品牌、产品、市场和买家资料，保留真实来源。缺失资料标记待补充，不编造。
-4. 自动安装统筹技能及十个功能技能到当前项目 .codebuddy/skills/，保留客户已有定制技能；内容冲突时记录缺口，不强制覆盖。
-5. 自动选择可用的本地端口，用项目启动入口运行工作台并打开或提供访问地址。服务保持运行，不能只生成命令或静态预览。
-6. 核验页面、知识库读回和技能路由；使用隔离测试目录验证任务保存与产物回写，不向客户数据写入测试记录。
-7. 返回实际访问地址、客户数据目录、启动状态和未完成项。后续根据我的要求直接扩展界面、字段、技能和工作流。
+1. 读取项目规则和已有文件，在独立代码子目录获取项目；保留本地修改、客户资料与定制技能。
+2. 检查 Node.js 22.18+，在授权范围自动准备实际运行环境；Python 仅旧辅助脚本/兼容测试需要。缺少权限或凭据时报告具体缺口。
+3. 使用当前客户项目目录初始化本地知识库，整理已有事实与来源，只补缺文件。原生 WorkBuddy 项目/资料库关联须宿主实际验证。
+4. 读取 registry.json 安装统筹及业务技能；内容冲突保留原文件，按 manifest SHA-256 和版本生成差异及更新指令，不能强制覆盖。
+5. 自动选择可用本地端口，调用 npm run setup -- --root <客户目录> --port <可用端口>，保持真实服务运行并打开或返回地址。
+6. 检查页面、知识读回、技能路由；在隔离临时目录验证知识→任务→真实文件回执→验收→销售反馈→下一轮。不要在客户目录写测试数据。
+7. 返回实际本地访问地址、客户数据目录、启动状态与未验证项。定时只保存配置，原生创建/暂停必须分别取得宿主验证；在线备份无认证隔离时保持关闭。
 ```
 
-WorkBuddy 在同一轮任务中完成可执行的准备、部署与验证，不把常规安装和启动步骤交给客户。只有宿主强制授权、必要凭据或无法从项目取得的业务资料需要客户补充；缺少这些条件时如实报告，不宣称已自动完成。
+WorkBuddy 执行可用的安装、启动和检查步骤。宿主授权、必要凭据、未知业务事实须据实补充；无法访问宿主不等于已部署。详见[部署与现场验收](docs/workbuddy-deployment.zh-CN.md)。
 
-工作台的一键启动入口供 WorkBuddy 调用：`npm run setup -- --root <客户项目目录> --port <可用端口>`；无桌面环境追加 `--no-open`。该入口负责初始化文件和启动服务，运行环境准备及技能安装由 WorkBuddy 按项目实际情况完成。
+## 技能与成果
 
-部署后，客户继续在 WorkBuddy 中提出业务目标，由对应技能创建或读取任务、执行实际工作、保存产物并回写。网页用于查看进度、资料和验收，不需要客户反复复制命令。业务事实、必要授权和客户验收仍由客户提供；WorkBuddy 不能代填成交结果或验收结论。
+企业知识库及14个业务入口共15个当前模块；保留历史 `seo-geo` 与 `site-and-content` 标识。技能目录提供官方版本、客户定制版本、用途、输入、成果和验收规则。完整注册表见 [registry.json](skills/registry.json)。
 
-### 腾讯云部署状态
+统筹技能路由业务工作。新批次保留 taskId、workspaceId、skillId/skillVersion、输入快照、cycleId 与成果路径。WorkBuddy 保存真实文件并提交结构化回执，后端校验目录、版本和任务；客户按当前文件哈希验收。文件变化使旧验收失效，重跑创建新批次。销售反馈以 leadId、cycleId 保存，下一轮建议保留源轮次关联。复制、安装、上传链接均不能冒充执行完成。
 
-目前支持的是**一键本地初始化与启动**。腾讯云公网一键部署尚未实现：需要先接入持久化数据库、对象存储、客户认证与空间隔离，并建立 WorkBuddy 本地任务连接层。当前后端仅监听本机，不能直接作为公网多客户服务。详见[云端扩展方案](docs/cloud-deployment.zh-CN.md)。
+定时适配目前为 command-only：无可核验原生 API，未实现宿主创建、查询或暂停。用户手填 hostTaskId 不能变成已启用。在线备份默认关闭且暂无认证隔离存储提供者；本地快照、校验及冲突恢复真实可用，冲突保留双方文件。更新先检查本地改动、快照和技能差异，不自动覆盖。
 
-### 公网发布模式与客户级云服务（v0.15）
-
-工作台支持在 WorkBuddy 中一键发布为在线应用并接入云服务，客户无需改代码：
-
-1. **公网发布**：用 `scripts/serve-public.mjs` 启动（等效于 `WORKBENCH_PUBLIC=1`，绑定 `0.0.0.0` 并放行反代域名；本地默认启动仍保持 127.0.0.1 严格校验）。发布沙箱的 Node 若低于 22.18（不支持 TypeScript 类型剥离），改用编译好的 `server.js`（`npm run build` 由 `server.ts` 生成）。
-2. **开通云服务**：在 WorkBuddy 中对应用执行开通，获得 `publicConfig`，把 `endpoint` 与 `publishableKey` 写入应用根目录 `cloud-config.json`（或环境变量 `WORKBENCH_CLOUD_ENDPOINT` / `WORKBENCH_CLOUD_KEY`），重新发布即可。
-3. **建云表**：在云数据库执行以下 SQL，销售反馈、任务、产物与企业档案即可云端持久化（任务与产物是 WorkBuddy 回写真实结果的通道，也是发布后不丢数据的保障）：
-
-```sql
-CREATE TABLE sales_feedback (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, lead_id TEXT NOT NULL, result TEXT NOT NULL, source TEXT, reason TEXT, next TEXT, cycle_id TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
-ALTER TABLE sales_feedback ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT ON TABLE public.sales_feedback TO authenticated, anon;
-CREATE POLICY sales_feedback_read_all ON sales_feedback FOR SELECT TO authenticated, anon USING (true);
-CREATE POLICY sales_feedback_insert_all ON sales_feedback FOR INSERT TO authenticated, anon WITH CHECK (true);
-
-CREATE TABLE workbench_tasks (id TEXT PRIMARY KEY, stage TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ready', cycle_id TEXT, instructions TEXT, inputs TEXT, acceptance TEXT, skill_id TEXT, skill_path TEXT, artifact TEXT, review TEXT, reviewed_hash TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), finished_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
-CREATE TABLE workbench_artifacts (task_id TEXT PRIMARY KEY, content TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
-CREATE TABLE workbench_profile (id TEXT PRIMARY KEY, company TEXT, products TEXT, markets TEXT, persona TEXT, goal TEXT, brand TEXT, source TEXT, project_ref TEXT, space_ref TEXT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
-ALTER TABLE workbench_tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE workbench_artifacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE workbench_profile ENABLE ROW LEVEL SECURITY;
-GRANT SELECT, INSERT, UPDATE ON TABLE public.workbench_tasks TO authenticated, anon;
-GRANT SELECT, INSERT, UPDATE ON TABLE public.workbench_artifacts TO authenticated, anon;
-GRANT SELECT, INSERT, UPDATE ON TABLE public.workbench_profile TO authenticated, anon;
-CREATE POLICY workbench_tasks_select ON workbench_tasks FOR SELECT TO authenticated, anon USING (true);
-CREATE POLICY workbench_tasks_insert ON workbench_tasks FOR INSERT TO authenticated, anon WITH CHECK (true);
-CREATE POLICY workbench_tasks_update ON workbench_tasks FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
-CREATE POLICY workbench_artifacts_select ON workbench_artifacts FOR SELECT TO authenticated, anon USING (true);
-CREATE POLICY workbench_artifacts_insert ON workbench_artifacts FOR INSERT TO authenticated, anon WITH CHECK (true);
-CREATE POLICY workbench_artifacts_update ON workbench_artifacts FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
-CREATE POLICY workbench_profile_select ON workbench_profile FOR SELECT TO authenticated, anon USING (true);
-CREATE POLICY workbench_profile_insert ON workbench_profile FOR INSERT TO authenticated, anon WITH CHECK (true);
-CREATE POLICY workbench_profile_update ON workbench_profile FOR UPDATE TO authenticated, anon USING (true) WITH CHECK (true);
-```
-
-任务与产物采用「本地文件 + 云库互为备份」：本地文件仍是单机真实来源，云库让已发布实例跨设备、跨发布保留数据，也让 WorkBuddy 可以把会话内执行的结果回写到云库供页面读取。同一任务以 `updated_at` 较新者为准，多端同时编辑按最后写入生效。
-
-4. **自动启用**：配置下发后，总览页出现「AI 增长助手」（云服务大模型流式对话），销售反馈保存时同步写入云端并在反馈页显示「云端同步反馈」。未配置云服务时这些入口自动降级为提示，本地文件功能不受影响。
-
-云服务数据面校验访问来源域名，公网链接之外的环境（如本地 127.0.0.1）无法调用云服务，属正常防护。
-
-### 页面内技能执行与知识库自动填充（v0.16）
-
-开启云服务后，任务详情多出「AI 生成草稿」入口，企业资料表单多出「从知识库填充」入口。二者都调用 WorkBuddy 云服务的默认模型，走真实流式接口，不做本地伪造。
-
-| 入口 | 位置 | 做什么 | 边界 |
-|---|---|---|---|
-| AI 生成草稿 | 任务详情 | 按该阶段技能的输入要求 / 执行步骤 / 产物要求 / 验收标准，结合企业档案、知识库与该阶段已有记录，生成中文工作草稿 | 云端模型**没有联网搜索工具**，输出是「待核验草稿」：未知数据写成「待核验：需补充来源与日期」，禁止编造数字与链接 |
-| 保存为产物 | 草稿弹窗 | 把草稿写入任务产物并同步云库，状态为待验收 | 保存不等于完成，仍需人工验收 |
-| 导出 PDF | 草稿弹窗 / 工作产物页 | 新窗口打印，可另存为 PDF | 经过浏览器打印，不经过服务器 |
-| 从知识库填充 | 企业知识库与项目资料表单 | 只依据项目 `growth-workspace/knowledge/` 下已保存的真实资料抽取企业信息 | 只填**未填写**的字段，资料里没有的留空，保存前需逐项核对 |
-
-两种执行方式并存，不要互相冒充：
-
-- **模式 A（页面内）**：云端模型直接出草稿，快，但不联网，事实需人工补齐，产物标注待核验。
-- **模式 B（WorkBuddy 真实执行）**：复制任务指令到 WorkBuddy 当前项目，由带联网检索与文件工具的会话执行，产物回写 `growth-workspace/artifacts/` 与云库，页面刷新即可看到。
-
-需要真实市场数据、竞品价格、买家背景时，用模式 B；需要快速搭出结构、清单与访谈提纲时，用模式 A。
-
-#### 知识库按阶段取用
-
-AI 草稿不是把所有知识一股脑塞给模型，而是分两层：
-
-- **企业事实层**（organization、brand-profile、products、target-markets、buyer-personas、profile.md、websites）：所有阶段共用
-- **阶段资料层**：按任务阶段追加，命中文件名关键词即纳入
-
-| 阶段 | 额外纳入的知识 |
-|---|---|
-| 市场调研 | market / competitor / 竞品 / 市场 / 调研 |
-| 产品机会 | product / 产品 / 机会 |
-| 建站 | site / website / 内容 / 建站 / 页面 |
-| SEO与GEO | seo / geo / keyword / 关键词 / 页面 / 事实卡 / fact |
-| 内容运营 | content / 选题 / 内容 / 发布 / 素材 / 表现 |
-| 主动获客 | buyer / linkedin / 获客 / 线索 / lead |
-| 客户背调 | buyer / customer / 客户 / 背调 / 线索 |
-| 销售反馈 | feedback / crm / 销售 / 反馈 |
-| 优化下一轮 | 复盘 / 反馈 / sop / 总结 |
-
-所以做内容生成和 SEO/GEO 时，把关键词库、可引用事实卡、历史选题与表现放进 `growth-workspace/knowledge/`，文件名带上对应关键词，该阶段的草稿就会引用它们，并标注来自哪个文件。资料里没有的关键词、排名、数据一律写待核验，不许编。
-
-「从知识库填充」只取企业事实层，不会被阶段资料污染。
-
-#### 知识原件放哪
-
-项目资料库（共享盘）存原件，工作台读 `growth-workspace/knowledge/` 下的 md，两者由会话侧同步。建议目录：`01-企业事实`、`02-客户与线索`、`03-渠道与投放`、`04-竞品与市场`、`05-内容资产`、`06-SEO与GEO`、`07-复盘与SOP`。每份文件带来源、日期、审核状态、负责人、适用范围、敏感级别；客户名单与手机号属受限信息，默认不进共享盘。
-
-## 工作台与技能分工
-
-统筹技能负责初始化、路由、工作流定义及任务回写；企业知识库与九个业务模块各有独立技能。
-
-| 工作台入口 | 对应技能 | 主要工作 |
-|---|---|---|
-| 企业知识库 | `yundian-growth-knowledge` | 企业事实、来源、审核、资料缺口 |
-| 市场调研 | `yundian-growth-market-research` | 需求、竞争、市场与买家研究 |
-| 产品机会 | `yundian-growth-product-opportunity` | 潜在爆款、机会评分、风险与验证 |
-| 建站 | `yundian-growth-site-and-content` | AI建站、Shopify、WordPress；保留旧ID兼容 |
-| SEO与GEO | `yundian-growth-seo-geo` | SEO/GEO/AEO、Shopify38项与WordPress26项验收 |
-| 内容运营 | `yundian-growth-content-operations` | 选题、制作、发布计划与效果复盘 |
-| 主动获客 | `yundian-growth-acquisition` | LinkedIn买家筛选、联系人核验、草稿与跟进 |
-| 客户背调 | `yundian-growth-buyer-check` | 主体、联系人关系、采购匹配与风险 |
-| 销售反馈 | `yundian-growth-sales-feedback` | 真实联系、报价、成交或拒绝信息 |
-| 优化下一轮 | `yundian-growth-next-cycle` | 反馈驱动的改进与下一轮任务 |
-
-[模块契约](docs/skill-modules.zh-CN.md)列明输入、执行步骤、产物、验收及交接。增长总览、工作产物和项目设置由统筹技能维护。新任务预填模块要求，客户可修改；提示字段不代表实际数据。
-
-技能文件安装、宿主加载和外部工具授权是不同状态。页面内只提供按技能规范生成的待核验草稿，不能把「AI 生成草稿」或复制任务指令当作执行完成。`submit_result.mjs` 将实际产物回写为待验收；客户验收后才完成任务，产物改变会使旧验收失效。
-
-## 知识库与数据
-
-以客户项目 `growth-workspace/knowledge/` 为主要知识库，覆盖组织、品牌、产品、站点、市场、画像、CRM/线索、社媒、统计与增长动作。初始化只补缺文件，保留已有资料。原始证据、审核状态、公开范围与任务使用范围应可追溯。
-
-ima、腾讯乐享和其他工具可按需扩展，使用宿主实际可用且已授权的能力。目前没有独立云端知识库API客户端，不自动上传或双向同步。详见[知识技能](skills/yundian-growth-knowledge/SKILL.md)及[外部来源规范](skills/yundian-growth-knowledge/references/EXTERNAL_SOURCES.md)。
-
-客户数据保存于授权项目目录；不同客户使用独立目录。不要把 `growth-workspace/`、`customer-data/` 或凭据提交到 Git。文件版提供单进程版本冲突检查和单文件原子替换，不提供多人租户隔离。Python旧后端暂供回退；不得与 Node.js 后端同时写入同一目录。
-
-当前提供真实资料、任务、产物、台账、验收与反馈管理。模型和外部工作由 WorkBuddy 执行；供应商API、实际发信、发布与采购依赖客户授权及工具配置。主动获客默认聚焦 LinkedIn；不包含广告投放操作。
-
-## 扩展与开发
-
-- 修改界面：`app-v03.js`、`styles-v03.css`、`index.html`。
-- 修改后端：`server.ts`；保持任务、状态、数据和回写兼容。
-- 扩展技能：在 `skills/` 添加或更新技能，并维护 `skills/registry.json`；新增阶段还需同步后端阶段、前端导航和初始化结构。
-- 修改后验证真实文件读写、技能路由和产物验收；不要用静态预览代替功能验证。
+## 本地运行、构建与技能包
 
 ```sh
 npm ci
-npm run typecheck
+npm run setup -- --root <客户项目目录> --port 8767
 npm test
-python -m unittest discover -s tests -v
-node --check app-v03.js
+npm run typecheck
+npm run build
+npm run package:skills
 ```
 
-Node.js回归测试中包含 Python 技能回写兼容检查，因此运行完整测试需要 Python。客户运行工作台本身不需要安装开发依赖。
+构建编译完整 `src/**/*.ts` 与 `server.ts`，入口保持 `server.js`；测试涵盖 `tests/*.test.ts`，兼容测试需要 Python。开发和验收指南见[迁移与能力边界](docs/migration-v2.zh-CN.md)。客户运行本地服务不需要开发依赖。
 
-## 关于云店+与搞跨境的可乐哥
+本次是 **0.15.0 工作树构建**，未创建发布。`dist/skills-working-tree/` 生成17个独立 ZIP、1个总包及 `manifest.json`；每项记录技能声明版本、SHA-256、文件清单与 working-tree 标记，技能0.16.0声明不表示工作台0.16.0已发布。构建后选择[完整技能包](dist/skills-working-tree/yundian-growth-skills-v0.15.0-working-tree.zip)或[独立包目录](dist/skills-working-tree/)。同名定制技能不会被安装覆盖；更新官方内容必须先比较和保留客户版本。
 
-[云店+官网](https://www.ydjia.com/zh)专注 B2B 外贸企业的建站与数字营销，围绕公域引流、独立站承接和私域转化提供出海服务。业务包括 AI建站、WordPress定制建站、SEO/GEO、Google Ads、Facebook/TikTok 社媒营销、内容与数据分析；工作台统一规划 Shopify独立站等建站路径。
+## 公网展示与私有客户数据
 
-“搞跨境的可乐哥”（Cola）是云店+的跨境外贸营销实践者与内容分享者。按[官网介绍](https://www.ydjia.com/zh)，拥有10年以上跨境电商与外贸实战经验，专注 AI+B2B独立站及营销推广。本项目将线上获客经验沉淀为可复用、可定制的技能与工作流。业务服务介绍不表示开源项目已经自动接入相关平台。
+用户确认的[演示地址](https://yundian-growth-workbench.app.workbuddy.host/)仍为外部现有实例。本次没有部署或核验该地址运行当前工作树代码。
 
-## 文档与许可
+`scripts/serve-public.mjs` 仅提供公共监听模式，**不是经认证的客户私有托管**。请求令牌与路径校验不构成公网用户认证或多租户隔离。公开演示只用隔离空白/公开资料目录；客户名单、联系方式、知识、成果和凭据不得放入公共演示实例。腾讯云私有托管需另行验证认证、客户隔离、存储与备份。旧匿名云表 SQL 和网页模型入口不适用当前工作台。
 
-[项目规划](docs/project-plan.zh-CN.md) · [统筹技能](skills/yundian-growth-workbench/SKILL.md) · [技能分工](docs/skill-modules.zh-CN.md) · [部署准备](docs/cloud-deployment.zh-CN.md)
+## 云店+与搞跨境的可乐哥
 
-代码与技能采用 [MIT License](LICENSE)。云店+名称与logo遵守[品牌说明](BRANDING.md)。欢迎提交 Issue、Pull Request，或 Fork 后针对自己的客户业务扩展。
+[云店+](https://www.ydjia.com/zh)围绕公域引流、独立站承接与私域转化，提供 AI建站、WordPress定制建站、SEO/GEO、Google Ads、Facebook/TikTok 社媒营销及内容数据服务；本工作台也支持 Shopify 建站路径。
 
-## WorkBuddy 自动操作接口（v0.14）
+搞跨境的可乐哥（Cola）为已确认的专家入口，支持配置中已匹配模块，联系方式与服务范围见[专家配置](config/experts.json)。专家与陪跑标明付费属性，未虚构价格；免费技能持续可用。联系和服务官网不授予专家读取客户资料的权限，分享成果须客户主动选择。
 
-WorkBuddy 可使用 scripts/workbench.mjs 直接读取状态、安装技能、创建任务、保存业务记录/知识/验收台账与销售反馈；各动作复用后端校验。任务产物可由独立 submit_result.mjs 回写，不再依赖 Python。CLI 不执行模型、不直接发送 LinkedIn 消息；执行实际业务仍由宿主完成。操作应串行进行，避免与网页同时写入；完整测试仍包含旧 Python 兼容检查。
+## 数据与扩展
 
-```sh
-node scripts/workbench.mjs --root <客户目录> --command state
-node scripts/workbench.mjs --root <客户目录> --command save --action install-skills
-node scripts/workbench.mjs --root <客户目录> --command save --action task --payload <客户目录内的任务JSON文件>
-```
+客户对象保存到指定项目 `growth-workspace/`，定制技能位于客户 `.codebuddy/skills/`；不同客户使用独立目录。不要提交客户数据和凭据，Python旧后端不得与 Node 后端同时写入同一目录。
 
-[实现核对与后续方向](docs/implementation-review.zh-CN.md)逐项说明当前真实功能及外部执行边界。
-
-## v0.15 设置与版本更新
-
-项目设置支持本地自定义头像（PNG/JPEG/WebP，256KB以内）和恢复默认。进入设置时检查官方公开release.json；失败如实提示，可手动重试。检查只发送固定公开请求，不上传客户数据。发布使用Git标签与版本清单。检测到更高版本时提供WorkBuddy更新指令：备份、核对Git改动、独立目录三方合并、保留客户数据与定制技能、验证后切换；冲突不能安全合并时保留当前版本并报告。无共同基线的非Git目录不强制覆盖。页面不自动更新代码。
+前端组件在 `web/views/`，领域、调度、技能和备份代码在 `src/`；扩展入口维护 registry、真实技能、输入/产物/验收及回写契约。迁移前完整预检并备份，失败保留原字节与目录树。详见[迁移说明](docs/migration-v2.zh-CN.md)、[统筹技能](skills/yundian-growth-workbench/SKILL.md)。代码与技能采用 [MIT](LICENSE)，名称和logo遵守[品牌说明](BRANDING.md)。

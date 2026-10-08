@@ -1,0 +1,28 @@
+[
+  {
+    "id": "cola",
+    "name": "搞跨境的可乐哥",
+    "modules": [
+      "site-and-content",
+      "seo",
+      "seo-geo",
+      "google-ads",
+      "facebook-ads",
+      "sales-feedback",
+      "next-cycle"
+    ],
+    "contact": "13631179943",
+    "description": "AI建站、WordPress、SEO、Google Ads、Facebook广告、数据分析",
+    "websites": [
+      "https://www.ydjia.com",
+      "https://www.dadafuture.com",
+      "https://socialmedia.ydjia.com"
+    ],
+    "projectLinks": [
+      {
+        "title": "工作台开源项目",
+        "url": "https://github.com/colaliang/yundian-ai-growth-workbench"
+      }
+    ]
+  }
+]

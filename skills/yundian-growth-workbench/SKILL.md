@@ -1,54 +1,42 @@
 ---
 name: yundian-growth-workbench
-description: 在 WorkBuddy 客户项目中初始化知识库、定义和执行获客工作流，保存真实任务产物；也用于按配套规格搭建获客工作台。
+description: 在 WorkBuddy 客户项目初始化本地知识、路由全域获客技能、保存真实任务回执与验收反馈；按客户要求生成或调整获客工作台。
 ---
 
-# WorkBuddy 客户自定义工作台
+# WorkBuddy 客户获客工作台
 
-服务跨境 B2B 外贸工厂和跨境卖家，固定主线：市场调研 → 产品机会 → 建站与内容 → 获客 → 客户背调 → 销售反馈 → 优化下一轮。客户自主定制每步流程与工具，由 WorkBuddy 执行；不按顾问交付定位，也不泛化为无边界办公工作台。
+服务跨境B2B工厂与跨境卖家。固定业务主线：市场调研→产品机会→建站与内容→获客→背调→销售反馈→下一轮。客户定义目标与流程，WorkBuddy执行实际工作，工作台记录知识、指令、成果及验收。
 
-## 首次调用：先建立知识库
+## 先建立客户知识
 
-1. 读取当前项目规则，确认 WorkBuddy 项目及授权工作目录。没有原生项目时指导客户从“项目”创建；有工具能力才实际创建并读取验证。不要把技能目录作为客户数据目录。
-2. 使用原生项目资料库；按需要关联团队空间。只记录实际取得的名称、链接或标识。缺少宿主操作工具时说明客户端操作路径并保持待关联，不能宣称云端空间创建完成。
-3. 在客户授权目录运行 `python <技能目录>/scripts/init_workspace.py --root <项目目录>`。没有 Python 时按同样结构创建文件，不安装依赖或覆盖已有知识。读取生成的 `growth-workspace/workspace.json` 和 `knowledge/00-index.md`。
-4. 将客户提供的资料整理到知识库，登记文件/URL、日期、审核状态，保留原文件。优先记录主体、产品/服务、目标、市场、画像、品牌和禁止事项；缺失信息询问或标记待补充，禁止编造。
-5. 默认保留并使用 WorkBuddy 本地项目知识，不强制上传。客户选择原生项目资料库、ima或腾讯乐享时，按知识技能的外部来源规范授权并验证；不能将本地文件创建等同云端索引完成。
+读取项目规则、实际 WorkBuddy 项目与授权客户目录，优先本地知识。使用工作台代码时以 `scripts/workbench.mjs --root <客户目录> --command state` 初始化并读回；仅独立安装技能时可用 `scripts/init_workspace.py`（Python辅助），没有Python按同样结构只补缺文件。客户数据在指定项目 `growth-workspace/`，不能写入官方技能目录。知识整理保留来源、日期、审核及公开范围，资料不足标明缺口。
 
-安装不会自动执行本流程；首次启用必须先执行。每次业务任务先检查本地知识是否足够；原生或云端绑定未完成不阻塞使用已确认的本地知识，缺少任务必需资料时先补足。独立文件任务可使用客户明确提供的输入，说明当前原生关联状态。
+原生项目/资料库/空间仅在宿主工具实际创建并读回后登记已关联；本地文件不等于上传或云端索引。ima/腾讯乐享等按知识技能 references/EXTERNAL_SOURCES.md 实际授权核验，默认不上传。
 
-## 定义与执行工作
+## 路由与业务闭环
 
-客户提出目标后读取 [工作流规范](references/WORKFLOWS.md)。保持七步获客主线，允许客户自定义各阶段的目标、渠道、步骤、工具和输出，先保存定义，再执行真实工具操作。根据现有业务选择切入阶段，已有站点无需重建。WorkBuddy 对话是主入口，不需要自建模拟大模型聊天。
+读取项目 `.codebuddy/skills/registry.json`，独立安装时读 [MODULES.json](references/MODULES.json)。后者只用于发现，不表示其他技能已安装。当前覆盖知识库、市场研究、产品机会、建站、SEO、GEO、内容运营、社媒、Facebook广告、Google Ads、LinkedIn主动开发、邮件开发、背调、销售反馈及增长复盘。历史seo-geo、site-and-content标识保留，不删除旧批次。
 
-任务记录 cycleId、stage、上游产物、输入来源、状态、产物路径、执行结果和失败原因；用稳定 leadId 将线索、背调和销售反馈关联。没有销售反馈时标记待反馈，不宣布一轮闭环已完成。产物必须写入并读回；缺少工具、权限或证据时标记 blocked/needs-input，不填充模拟结果。结束更新知识索引；事实审核与任务完成分开记录。
+实际业务必须读取对应技能入口，选择官方或客户定制版本。不存在技能不能假装执行。安装预检所有文件，同名不同内容保留客户版；按包manifest比较版本/SHA-256，新官方内容先在独立版本目录暂存，报告差异和更新指令，不覆盖定制注册表或文件。
 
-外部发布、发信、采购按客户实际授权执行。广告仅只读报告及官方后台跳转。供应商密钥留在宿主授权或安全凭据中，不写入知识文件。已有授权无需反复确认，未知能力不冒充已接入。
+读取 [WORKFLOWS.md](references/WORKFLOWS.md) 定义输入、步骤、工具、产物和验收。任务包含taskId/workspaceId、skillId/skillVersion、输入快照及cycleId。复制指令仅表示ready。缺工具/授权保持needs-input，实际执行通过回执登记。保存真实文件和结构化receipt后读回，进入needs-review；客户按当前artifactId和contentHash验收才完成。文件改变使旧验收失效，重跑创建新批次。leadId和源cycleId连接真实销售反馈及下一轮，不用预测冒充成交。
 
-## 搭建或调整 UI
+发送、发布、广告编辑和预算修改须实际客户授权及工具，保存真实回执；没有工具只做方案/草稿并记录未执行。禁止填造联系人、效果、宿主任务和认证。
 
-仅在客户要求开发界面时读取 [BUILD_BRIEF.md](references/BUILD_BRIEF.md)。沿用现有代码和客户选择，先检查目录与修改状态。交付需区分实际实现、验证结果和未实现项，不将静态预览称为原生集成。
+## 调度、备份和构建
 
-## 功能技能路由
+定时配置和宿主创建分开。当前 command-only 无可核验原生create/pause/verify API，只生成指令；手填hostTaskId不代表已启用。实际执行另记录宿主证据、计划时间与产物，外部动作失败不得自动重试。
 
-每个阶段必须读取并调用 配套 registry.json 中的对应技能（项目安装后为 .codebuddy/skills/registry.json）（安装后位于项目 .codebuddy/skills/）。知识库使用 yundian-growth-knowledge；九个业务阶段各自对应独立业务技能。不能只生成指令而宣称已经执行。执行实际工作后调用 scripts/submit_result.mjs 回写文件与状态，待客户验收。安装或使用状态与供应商连接器授权分别说明。
+本地快照真实可用，恢复先备份现状、校验客户空间及文件哈希，冲突保留双方。在线备份默认关闭，无认证隔离存储提供者不能启用。公共监听不是私有托管，不把客户资料放入公开演示。
 
-## v0.10 功能拆分
+客户要求开发界面时读 [BUILD_BRIEF.md](references/BUILD_BRIEF.md)，检查当前代码及改动后实施。WorkBuddy自动获取/准备环境/启动/验证，不把命令生成当部署。Node.js22.18+；Python仅旧辅助/兼容路径。整个TS图编译并保留server.js入口，ZIP标明工作树及manifest版本，不提前发布。
 
-建站与内容拆为建站（保留site-and-content标识兼容历史）、SEO与GEO（seo-geo）、内容运营（content-operations）；获客改为主动获客（acquisition），聚焦LinkedIn主动开发，不包含Facebook/Google Ads报告及泛社媒获客。分别调用registry.json中的对应技能。七步业务闭环不变，页面把其中一阶段拆为三个工作入口；已有任务不删除。
+## 真实操作接口
 
-## v0.13 模块分工
+使用仓库 `scripts/workbench.mjs --root <客户目录> --command state`，create-task/receipt/review/knowledge-confirm 使用目录内JSON `--payload`，`--revision`检查冲突。save支持profile/knowledge/feedback/install-skills/daily-create等后端动作，串行操作避免网页同时写。review须客户实际验收依据。
 
-统筹技能负责首次初始化、客户工作流定义、技能路由和任务回写。企业知识库与九个业务模块的输入、执行步骤、产物、验收和交接见配套 registry.json；执行业务必须读取对应独立技能。增长总览/工作产物/项目设置由本技能维护，不代替业务执行。工作台使用 Node.js 22.18+：npm start -- --root <客户项目目录> --port 8767；Python仅保留技能辅助脚本和旧后端回退。
+独立脚本 `scripts/submit_result.mjs --root <客户目录> --task <taskId> --file <真实文件>`读回既有任务，待验收；失败用needs-input及实际原因。只装技能不能假定已安装工作台代码或客户端已加载。真实WorkBuddy加载、原生定时、实际客户执行与在线隔离备份均须单独现场验收。
 
-独立安装统筹技能时，读取 references/MODULES.json 获取功能路由；该文件只用于发现技能，不代表对应业务技能已经安装。项目已有 .codebuddy/skills/registry.json 时优先读取项目注册表。缺少对应技能则安装其独立包，不能用统筹技能假装完成业务执行。
+安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。仅旧版无工作台元数据且非定时的未终结任务保留独立回写。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
 
-## WorkBuddy 直接操作工作台
-
-使用开源代码工作台时，无需手动复制网页任务：调用仓库 scripts/workbench.mjs。state 读取真实状态；save 使用 --action 和 --payload <客户目录内的JSON文件> 复用后端校验，支持 profile、knowledge、task、record、audit-create、audit-item、feedback、install-skills、artifact、review。review 仅在客户已给出明确验收依据时调用。缺失资料不填造数据。CLI 与网页不要同时写入同一客户目录；先完成单次操作再刷新网页，并可传 --revision 检测旧状态。
-
-node <工作台代码目录>/scripts/workbench.mjs --root <客户目录> --command state
-
-node <工作台代码目录>/scripts/workbench.mjs --root <客户目录> --command save --action task --payload <客户目录内的任务JSON>
-
-生成自己的工作台时可复用这些接口；只安装技能时不能假设已安装工作台代码。独立 Node.js submit_result.mjs 无需工作台代码或 Python 即可回写已有任务。
+应用任务的已安装回写命令必须带 --application "实际工作台应用目录"（复制指令提供），并与任务位置匹配；不能把客户任务或产物指定的目录自动作为代码加载。Python 命令同样支持此参数。能力不足时停止登记。

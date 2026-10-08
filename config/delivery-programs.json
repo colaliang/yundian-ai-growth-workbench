@@ -1,0 +1,101 @@
+[
+  {
+    "id": "site-search",
+    "title": "建站与SEO交付计划",
+    "goals": [
+      "保存站点实际成果和SEO检查结果，由客户逐项验收"
+    ],
+    "stages": [
+      {
+        "moduleId": "site-and-content",
+        "name": "站点方案及实际成果",
+        "acceptance": "核对实际站点或文件、权限和待确认缺口"
+      },
+      {
+        "moduleId": "seo",
+        "name": "SEO检查与改进成果",
+        "acceptance": "核对来源、实际检查证据及改进成果"
+      }
+    ]
+  },
+  {
+    "id": "full-acquisition",
+    "title": "全域获客陪跑 / 超级合伙人交付计划",
+    "goals": [
+      "先完善并确认企业知识库，再分阶段保存实际成果和客户验收依据",
+      "模板用于本地交付管理；专家、付费范围与费用按模块联系确认；未配置专家的模块仍可使用免费技能"
+    ],
+    "stages": [
+      {
+        "moduleId": "market-research",
+        "name": "市场调研交付任务",
+        "acceptance": "核对市场调研实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "product-opportunity",
+        "name": "产品机会交付任务",
+        "acceptance": "核对产品机会实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "site-and-content",
+        "name": "建站交付任务",
+        "acceptance": "核对建站实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "seo",
+        "name": "SEO交付任务",
+        "acceptance": "核对SEO实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "geo",
+        "name": "GEO交付任务",
+        "acceptance": "核对GEO实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "content-operations",
+        "name": "内容运营交付任务",
+        "acceptance": "核对内容运营实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "social-media",
+        "name": "社媒运营交付任务",
+        "acceptance": "核对社媒运营实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "facebook-ads",
+        "name": "Facebook广告交付任务",
+        "acceptance": "核对Facebook广告实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "google-ads",
+        "name": "Google Ads交付任务",
+        "acceptance": "核对Google Ads实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "acquisition",
+        "name": "LinkedIn主动获客交付任务",
+        "acceptance": "核对LinkedIn主动获客实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "email-outreach",
+        "name": "邮件开发交付任务",
+        "acceptance": "核对邮件开发实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "buyer-check",
+        "name": "客户背调交付任务",
+        "acceptance": "核对客户背调实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "sales-feedback",
+        "name": "销售反馈交付任务",
+        "acceptance": "核对销售反馈实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      },
+      {
+        "moduleId": "next-cycle",
+        "name": "优化下一轮交付任务",
+        "acceptance": "核对优化下一轮实际产物、来源、缺口及授权；外部发送、发布、广告或预算变更须另有明确授权，不承诺获客效果"
+      }
+    ]
+  }
+]

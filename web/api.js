@@ -1,0 +1,1 @@
+export const api={async request(path,options={}){const response=await fetch(path,{...options,headers:{'Content-Type':'application/json',...options.headers}});const value=await response.json();if(!response.ok)throw Error(value.error||'请求失败');return value;}};

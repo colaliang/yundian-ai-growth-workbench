@@ -1,24 +1,9 @@
-# 七步获客闭环与客户自定义工作流
+# 全域获客流程与回执
 
-工作流保存到 `growth-workspace/workflows/<slug>.json`：id、version、name、goal、inputs（来源/文件）、steps（工具/依赖/输出/验收）、externalActions、budget、feedback。由客户目标决定内容，工作流定义不等于已执行。
+七步主线保持市场→机会→建站与内容→获客→背调→反馈→下一轮，业务阶段从registry/MODULES读取。建站、SEO、GEO、内容与社媒分别保存任务；Facebook和Google Ads支持策略、素材、只读分析，客户明确授权且真实工具可用时才实际编辑或投放。LinkedIn及邮件默认草稿，发送与结果须真实回执。
 
-任务单独保存到 `tasks/<uuid>.json`，记录 workflowId/version、status（needs-input/ready/running/blocked/completed）、inputRefs、artifactRefs、evidenceRefs、startedAt、finishedAt、error。只有写入并读回产物、满足验收条件才 completed。失败和恢复保留历史，不凭空登记工具回执。
+客户自行定义目标、输入来源、工具、步骤、依赖、产物、验收和外部动作范围。任务绑定workspaceId、taskId、技能版本、输入快照、cycleId；workflow定义不是已执行。初始化只补缺文件。上游成果、leadId及源轮次关系可追溯，下一轮建议保留反馈来源，不自行代填成交。
 
-固定主线：市场调研 → 产品机会 → 建站与内容 → 获客 → 客户背调 → 销售反馈 → 优化下一轮。具体任务可从客户当前阶段切入或并行。
+ready为待执行，复制不改变状态；running须宿主实际回写。真实文件receipt校验路径、任务、workspace与版本，读回后needs-review，客户按artifactId与当前hash验收才completed。缺输入needs-input、实际失败failed，历史blocked须保留解释。链接和人工上传不代表宿主执行，文件改动使旧验收失效；重跑创建新批次。
 
-各阶段流程：
-
-- 市场研究：范围与来源 → 竞争/需求证据 → 结论与不确定性 → 研究报告。
-- 产品机会：产品约束 → 需求/竞争/成本证据 → 机会评分与风险 → 待验证清单。不能保证爆款。
-- 建站：企业事实 → 平台/页面需求 → 实际页面和代码 → 站点验证。
-- SEO与GEO：站点及事实 → 技术/搜索诊断 → 逐项证据与修复 → 验收台账。
-- 内容运营：买家问题与品牌事实 → 选题和制作 → 经授权发布或真实草稿 → 效果复盘。
-- 主动开发：客户画像 → 真实可用名单来源 → 去重/背调 → 文案草稿 → 经授权发送及回执。未购买数据不编造联系人。
-- 广告：官方只读数据 → 异常/归因分析 → 建议报告 → 官方后台链接，不执行投放操作。
-- 质量复盘：客户实际跟进反馈 → 有效/无效原因 → 来源与画像关联 → 下一轮改进；区分预测评分和实际成交。
-
-客户可自定义各阶段的目标、资料、渠道、步骤、工具、结果、验收和反馈，扩展应服务获客闭环。每个任务附带 cycleId、stage、upstreamArtifactRefs 和 downstreamTaskRefs。获客/背调/销售反馈按稳定 leadId 串联；销售反馈必须来自实际跟进，缺失时保持待反馈。优化下一轮输出有证据的改进假设及新任务，链接回上一轮来源，不以模型推测填充成交。完成后的确认事实进入知识索引，未证实推断保留来源和状态。
-
-## v0.10 功能拆分
-
-建站与内容拆为建站（保留site-and-content标识兼容历史）、SEO与GEO（seo-geo）、内容运营（content-operations）；获客改为主动获客（acquisition），聚焦LinkedIn主动开发，不包含Facebook/Google Ads报告及泛社媒获客。分别调用registry.json中的对应技能。七步业务闭环不变，页面把其中一阶段拆为三个工作入口；已有任务不删除。
+定时仅管理配置/指令和真实结果，不以本地定时器冒充原生WorkBuddy。当前无原生创建/验证/暂停接口；手填ID不表示已启用。计划ID+计划时间去重，外部动作失败不自动重试。知识确认与任务验收分开；在线备份无认证隔离存储时保持关闭，本地恢复冲突保留双方。

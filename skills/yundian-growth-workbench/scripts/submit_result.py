@@ -5,8 +5,9 @@ import json
 import os
 from pathlib import Path
 import uuid
+import subprocess
 
-def submit(root, task_id, file=None, status='needs-review', reason=''):
+def submit(root, task_id, file=None, status='needs-review', reason='', application=None):
     root=Path(root).resolve(strict=True)
     if len(task_id)!=32 or any(c not in '0123456789abcdef' for c in task_id): raise ValueError('Invalid task id')
     if status not in ['needs-review','blocked','needs-input']: raise ValueError('Invalid result status')
@@ -14,6 +15,14 @@ def submit(root, task_id, file=None, status='needs-review', reason=''):
     path.resolve().relative_to(root)
     task=json.loads(path.read_text(encoding='utf-8'))
     if task['id']!=task_id: raise ValueError('Task id mismatch')
+    manifest_path=base/'workspace.json'
+    manifest=json.loads(manifest_path.read_text(encoding='utf-8-sig')) if manifest_path.exists() else {}
+    if manifest.get('contractVersion')==2 or any(task.get(k) for k in ['applicationRoot','workspaceId','inputSnapshotRef','skillVersion','scheduleId','scheduledAt']):
+        command=['node',str(Path(__file__).with_name('submit_result.mjs')),'--root',str(root),'--task',task_id,'--status',status,'--reason',reason]
+        if file is not None: command += ['--file',str(file)]
+        if application is not None: command += ['--application',str(application)]
+        return json.loads(subprocess.check_output(command,text=True,encoding='utf-8'))
+    if task.get('status') in ['failed','cancelled','completed']: raise ValueError('Terminal standalone task cannot accept a novel result')
     def atomic(target, text):
         target.resolve().relative_to(root)
         target.parent.mkdir(parents=True,exist_ok=True)
@@ -38,5 +47,5 @@ def submit(root, task_id, file=None, status='needs-review', reason=''):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__); p.add_argument('--root',required=True); p.add_argument('--task',required=True)
-    p.add_argument('--file'); p.add_argument('--status',default='needs-review'); p.add_argument('--reason',default='')
-    a=p.parse_args(); print(json.dumps(submit(a.root,a.task,a.file,a.status,a.reason),ensure_ascii=False))
+    p.add_argument('--application'); p.add_argument('--file'); p.add_argument('--status',default='needs-review'); p.add_argument('--reason',default='')
+    a=p.parse_args(); print(json.dumps(submit(a.root,a.task,a.file,a.status,a.reason,a.application),ensure_ascii=False))

@@ -55,6 +55,7 @@ test('HTTP API enforces host, origin, token and revision; static UI works',async
   const base='http://127.0.0.1:'+port;
   try {
     assert.equal((await fetch(base+'/')).status,200);
+    assert.equal((await fetch(base+'/web/safe-url.js')).status,200);
     assert.deepEqual(await (await fetch(base+'/healthz')).json(),{ok:true});
     const badHost=await new Promise<number>(resolve=>http.get(base+'/api/state',{headers:{Host:'evil.test'}},res=>{res.resume();resolve(res.statusCode!);})); assert.equal(badHost,403);
     const state:any=await (await fetch(base+'/api/state')).json();
@@ -74,10 +75,10 @@ test('WorkBuddy CLI creates data and Node skill writes real results without Pyth
   assert.equal(task.skillId,'yundian-growth-acquisition');
   const report=path.join(store.root,'actual-report.md');fs.writeFileSync(report,'# 真实候选买家与来源');
   const script=path.join(store.root,'.codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs');
-  execFileSync(process.execPath,[script,'--root',store.root,'--task',task.id,'--file',report]);
+  execFileSync(process.execPath,[script,'--application',task.applicationRoot,'--root',store.root,'--task',task.id,'--file',report]);
   assert.equal(store.load().tasks[0].status,'needs-review');
   save('review',{id:task.id,review:'客户确认来源'});
-  execFileSync(process.execPath,[script,'--root',store.root,'--task',task.id,'--status','needs-input','--reason','缺少授权名单']);
+  execFileSync(process.execPath,[script,'--application',task.applicationRoot,'--root',store.root,'--task',task.id,'--status','needs-input','--reason','缺少授权名单']);
   assert.equal(store.load().tasks[0].status,'needs-input');assert.equal(store.load().tasks[0].reviewedHash,undefined);
   save('record',{stage:'buyer-check',name:'真实公司',source:'客户提供URL',leadId:'L1'});
   save('feedback',{leadId:'L1',result:'待跟进'});

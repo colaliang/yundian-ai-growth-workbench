@@ -1,0 +1,3 @@
+# Keep skill source bytes consistent with packaged SHA-256 manifests across platforms.
+skills/** text=auto eol=lf
+*.zip binary
