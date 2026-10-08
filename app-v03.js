@@ -15,10 +15,82 @@ let updateProtection='';let updateInfo=null;let state,token,page='overview';cons
 const button=(text,action,id='',primary=false)=>`<button type="button" data-action="${action}" data-id="${esc(id)}" class="${primary?'primary':''}">${esc(text)}</button>`;
 const label=s=>stages.find(x=>x[0]===s)?.[1]||s;const statuses={'running':'执行中','failed':'执行失败','cancelled':'已取消','ready':'待执行','needs-review':'待验收','completed':'已验收','blocked':'执行受阻','needs-input':'待补资料'};
 function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';setTimeout(()=>$('#toast').style.display='none',4000);}
-async function refresh(){try{state=await api.request('/api/state');token=state.token;render();}catch(e){$('#main').innerHTML=`<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>请运行：npm start -- --root 客户项目目录 --port 8767</p></div>`;}}
-async function save(action,payload){if(action==='schedule-receipt-form'){action='schedule-receipt';payload={id:payload.id,receipt:{workspaceId:state.workspace.workspaceId,scheduleId:payload.id,action:payload.receiptAction,hostTaskId:payload.hostTaskId||null,source:payload.source,evidence:payload.evidence,status:payload.receiptAction==='pause'?'paused':'enabled'}};}if(action==='receipt-link'){action='receipt';payload={...payload,receiptId:crypto.randomUUID(),executor:'manual',status:'needs-review',artifacts:[{url:payload.url,summary:payload.summary}]};}const value=await api.request('/api/save',{method:'POST',headers:{'X-Workspace-Token':token},body:JSON.stringify({action,payload,revision:state.revision})});state={...value,token,projectRoot:state.projectRoot};render();toast('已保存到项目文件');}
+/* ---- 知识取用与受限信息保护（2026-10-06/08 定制，随主线 v0.15.0 移植）----
+   1) 企业事实为所有阶段共用，另按阶段追加该阶段相关资料，让内容生成 / SEO·GEO 能吃到对应知识
+   2) 送进模型前强制脱敏：知识库含对外口径记录（含真实号码），仅靠提示词约束不够，
+      在上下文出口拦一道，保证号码、微信号、二维码不会被模型复述进对外正文。
+      对外公开的服务价格属于可引用事实，不脱敏。 */
+const BASE_KB=/organization|brand-profile|products|target-markets|buyer-personas|profile\.md|websites|企业事实|品牌|governance|治理/;
+const STAGE_KB={'market-research':['market','competitor','竞品','市场','调研'],'product-opportunity':['product','产品','机会','竞品'],'site-and-content':['site','website','内容','content','建站','页面'],'seo-geo':['seo','geo','keyword','关键词','页面','事实卡','fact','内容'],'seo':['seo','keyword','关键词','页面','站内','技术'],'geo':['geo','aigc','ai','事实卡','引用','ai搜索','Prompt'],'content-operations':['content','选题','内容','发布','素材','表现'],'social-media':['social','社媒','tiktok','youtube','linkedin','pinterest','内容','发布'],'facebook-ads':['facebook','fb','ads','广告','投放','素材'],'google-ads':['google','ads','广告','投放','关键词','追踪'],'email-outreach':['email','邮件','outreach','开发信','名单','跟进'],'acquisition':['buyer','linkedin','获客','线索','lead','客户'],'buyer-check':['buyer','客户','背调','线索','customer'],'sales-feedback':['feedback','销售','crm','反馈'],'next-cycle':['复盘','反馈','sop','总结','cases','案例']};
+const CASE_KB=/cases-and-results|案例/;
+function redactForModel(s){return String(s??'')
+ .replace(/1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}/g,'[手机号已脱敏]')
+ .replace(/(?<!\d)0\d{2,3}[-\s]?\d{7,8}(?!\d)/g,'[座机已脱敏]')
+ .replace(/(微信|vx|weixin|wechat)[\s:：]*[A-Za-z][-_A-Za-z0-9]{5,19}/gi,'$1：[账号已脱敏]')
+ .replace(/(邮箱|email)[\s:：]*[\w.+-]+@[\w.-]+\.\w+/gi,'$1：[邮箱已脱敏]')
+ .replace(/二维码/g,'[二维码]');}
+/* 上下文分配：企业事实文件优先，再按阶段追加；每份按剩余预算动态取额，
+   避免固定字符上限把价格表后半段、治理规则尾段砍掉。 */
+const KB_BUDGET=16000,KB_MIN=1400,KB_MAX=4200;
+function knowledgeBrief(stage){const keys=STAGE_KB[stage]||[];
+ const hit=k=>keys.some(x=>String(k.path).toLowerCase().indexOf(x.toLowerCase())>=0)||(stage!=='knowledge'&&CASE_KB.test(k.path));
+ const files=(state.knowledge||[]).filter(k=>BASE_KB.test(k.path)||hit(k));
+ const ordered=files.filter(k=>BASE_KB.test(k.path)).concat(files.filter(k=>!BASE_KB.test(k.path)));
+ const parts=[];let left=KB_BUDGET;
+ ordered.forEach((k,i)=>{
+  if(left<=0||!k)return;
+  const cap=Math.max(KB_MIN,Math.min(KB_MAX,Math.floor(left/(ordered.length-i))));
+  const raw=String(k.content||'');
+  const body=raw.length>cap?raw.slice(0,cap)+'\n（本文件较长已截断，完整内容见 '+k.path+'）':raw;
+  const chunk='【'+k.path+'】\n'+body;
+  parts.push(chunk);left-=chunk.length;});
+ return redactForModel(parts.join('\n\n'));}
+/* 知识库同步自检：比对线上文件与同步基线，发现漏同步或线上被改坏 */
+function kbStatusHtml(){const k=state.kbCheck||{};
+ if(k.status==='ok')return '<span class="pill">一致</span> 线上 '+k.present+' 份知识文件与基线一致'+(k.at?'（同步于 '+esc(String(k.at).slice(0,19).replace('T',' '))+'）':'');
+ if(k.status==='drift')return '<span class="pill">不一致</span> '+k.drifted.length+' 份与基线不符：'+esc(k.drifted.join('、'))+'。本地运行 node scripts/sync-knowledge.mjs 同步后重新发布';
+ if(k.status==='no-baseline')return '<span class="pill">无基线</span> 未找到 .sync-manifest.json，运行 node scripts/sync-knowledge.mjs 生成';
+ return '<span class="pill">未知</span> 尚未校验';}
+/* ---- 云客户端与页面内草稿（模式 A，2026-10-06 定制，随主线 v0.15.0 移植）---- */
+let aiRun={id:null,busy:false,text:''};
+let cloud=null,cloudModelList=null,aiChat={history:[],conversationId:String(Date.now()),busy:false};
+function cloudReady(){return !!(state&&state.cloud&&window.WorkBuddyCloud&&WorkBuddyCloud.createWorkBuddyCloud);}
+function cloudClient(){if(cloud)return cloud;if(!cloudReady())return null;cloud=WorkBuddyCloud.createWorkBuddyCloud({endpoint:state.cloud.endpoint,publishableKey:state.cloud.publishableKey});return cloud;}
+function llmErrorMessage(e){const code=e&&e.error&&e.error.code||'';if(code.indexOf('auth_')===0)return '云服务鉴权失败（本地访问或非线上域名来源时不支持，请通过工作台线上链接使用）';if(code.indexOf('quota_')===0)return '模型额度不足或触发限流，请稍后再试';if(code.indexOf('request_')===0)return '请求参数错误：'+((e&&e.error&&e.error.message)||code);if(code.indexOf('gateway_')===0||code.indexOf('model_')===0)return '模型服务暂时不可用，请稍后重试';return (e&&e.message)||'调用失败';}
+async function ensureModels(){if(cloudModelList&&cloudModelList.length)return cloudModelList;const c=cloudClient();if(!c)throw Error('云服务未配置或 SDK 未加载');const list=await c.llm.models.list();cloudModelList=(list||[]).filter(m=>m.disabled!==true);if(!cloudModelList.length)throw Error('当前云服务没有可用模型');return cloudModelList;}
+async function generateDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===taskId);if(!t)return;const spec=(state.skills||{})[t.stage]||{};
+ const box=$('#ai-run');if(!box)return;const err=m=>{const x=$('#dialog-body .error');if(x)x.textContent=m;};
+ if(!cloudClient()){err('当前未配置云服务，AI 草稿不可用');return;}
+ aiRun={id:taskId,busy:true,text:''};box.innerHTML='';const el=document.createElement('div');el.className='ai-msg assistant';el.textContent='正在按技能规范生成…';box.appendChild(el);
+ /* 思考型模型首字可能等待 1-3 分钟，显示计时，避免看起来卡死 */
+ const startedAt=Date.now();const wait=setInterval(()=>{if(!aiRun.busy)return clearInterval(wait);if(!aiRun.text)el.textContent='正在按技能规范生成…（已等待 '+Math.round((Date.now()-startedAt)/1000)+' 秒；默认模型带思考过程，首字较慢）';},1000);
+ let model;try{model=(await ensureModels())[0];}catch(e){err(e.message||String(e));aiRun.busy=false;clearInterval(wait);return;}
+ const sys={role:'system',content:'你是云店+获客工作台的执行助手，严格按给定技能的规范产出中文工作草稿。规则：1) 事实与假设分开标注；2) 不掌握的实时数据（价格、规模、竞品动态）写成「待核验：需补充来源与日期」，禁止编造数字、来源或链接；3) 结构清晰可直接交业务人员补充；4) 结尾列出「缺口与下一步」；5) 知识库给了本阶段相关资料（关键词、可引用事实卡、历史选题与表现、竞品资料）时必须优先引用，并标注来自哪个文件；资料里没有的关键词、排名、数据一律写待核验，不得自行编造；6) 受限信息不得展开：联系人姓名、个人手机号、微信二维码、报价、客户名单等，正文写成「联系方式 / 报价见企业微信，不写入对外内容」，确需提醒时在结尾「内部备注」用占位符点出，禁止把完整号码或名单写进正文。'};
+ const user={role:'user',content:['任务：'+t.name,'阶段：'+label(t.stage),'轮次：'+(t.cycleId||'cycle-1'),'输入要求：'+(spec.inputs||t.inputs||''),'执行步骤：'+(spec.instructions||t.instructions||''),'产物要求：'+(spec.outputs||''),'验收标准：'+(spec.acceptance||t.acceptance||''),'企业档案：'+redactForModel(JSON.stringify(state.profile||{})),'企业知识库（企业事实 + 本阶段相关资料）：\n'+knowledgeBrief(t.stage),'本阶段已有记录：\n'+stageRecords(t.stage),'请输出 Markdown 草稿。'].join('\n\n')};
+ el.textContent='';
+ try{for await(const chunk of cloud.llm.chat.completions.create({model:model.id,stream:true,messages:[sys,user],temperature:1})){const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta&&chunk.choices[0].delta.content;if(d){aiRun.text+=d;el.textContent+=d;box.scrollTop=box.scrollHeight;}}}
+ catch(e){err(llmErrorMessage(e));}
+ finally{aiRun.busy=false;clearInterval(wait);if(!aiRun.text)el.textContent='';}}
+async function runSkillDraft(taskId){const t=(state.tasks||[]).find(x=>x.id===taskId);if(!t)return;const spec=(state.skills||{})[t.stage]||{};
+ const lack=!(state.knowledge||[]).length&&!state.profile.company?'<p class="note">提示：当前企业知识库为空，草稿质量会明显下降。先在「企业知识库」补充真实资料，或使用「从知识库填充」完善企业档案。</p>':'';
+ modal('AI 草稿 · '+t.name,`<p class="note">按技能 <b>${esc(spec.title||'')}</b>（${esc(spec.id||'')}）的规范生成，输入：${esc(spec.inputs||t.inputs||'未指定')}。模型无联网工具，输出为<b>待核验草稿</b>，关键来源需人工补全或复制任务指令交由 WorkBuddy 联网执行。</p>${lack}<div id="ai-run" class="ai-chat"></div><div class="error" role="alert"></div><div class="actions"><button type="button" data-action="ai-run-save" data-id="${esc(taskId)}" class="primary">保存为产物</button><button type="button" data-action="ai-rerun" data-id="${esc(taskId)}">重新生成</button><button type="button" data-action="ai-run-pdf" data-id="${esc(taskId)}">导出 PDF</button><button type="button" data-action="ai-copy" data-id="${esc(taskId)}">复制全文</button></div>`);
+ await generateDraft(taskId);}
+async function autofillProfile(){const fm=document.querySelector('#dialog-body form');if(!fm)return;
+ if(!cloudClient()){toast('当前未配置云服务，无法自动提取');return;}
+ if(!(state.knowledge||[]).length){toast('企业知识库为空，请先添加真实资料再填充');return;}
+ toast('正在从知识库提取企业信息…');
+ const sys={role:'system',content:'你是企业信息抽取助手。只依据给定资料提取，禁止推测、补充或编造；资料中没有的字段返回空字符串。只输出 JSON，键与要求：company=企业主体与品牌名（中英文，不超过 40 字）；products=产品与服务（不超过 200 字）；markets=目标市场；persona=买家画像；goal=获客目标；brand=品牌与业务约束；source=资料来源与文件路径。不要写入联系人姓名、手机号、二维码等没有对应字段的信息。'};
+ const user={role:'user',content:'资料：\n'+knowledgeBrief()+'\n\n已有档案（可补全但不要覆盖已有值）：'+redactForModel(JSON.stringify(state.profile||{}))};
+ let busy=true,t0=Date.now();const timer=setInterval(()=>{if(!busy){clearInterval(timer);return;}toast('正在从知识库提取企业信息…（已等待 '+Math.round((Date.now()-t0)/1000)+' 秒）');},5000);
+ try{const model=(await ensureModels())[0];let text='';
+  for await(const chunk of cloud.llm.chat.completions.create({model:model.id,stream:true,messages:[sys,user],temperature:0})){const d=chunk.choices&&chunk.choices[0]&&chunk.choices[0].delta&&chunk.choices[0].delta.content;if(d)text+=d;}
+  busy=false;clearInterval(timer);
+  const data=JSON.parse(text.replace(/^```json/i,'').replace(/```$/,'').trim());
+  let filled=0;for(const k of ['company','products','markets','persona','goal','brand','source']){const el=fm.querySelector('[name='+k+']');if(el&&!el.value&&typeof data[k]==='string'&&data[k]){el.value=data[k];filled++;}}
+  toast(filled?'已从知识库填充 '+filled+' 项，请核对后再保存':'知识库未提取到可填充内容，请手动补充');
+ }catch(e){busy=false;clearInterval(timer);toast('提取失败：'+(e.message||e));}}
 /* 产物 / 草稿导出 PDF：新开窗口打印，内容留在浏览器侧，不上传 */
-function printPdf(title,content){const w=window.open('','_blank');if(!w){toast('请允许弹出窗口后再导出 PDF');return;}w.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:"Microsoft YaHei",sans-serif;line-height:1.9;padding:36px;color:#24344b}h1{font-size:20px;margin:0 0 8px}.meta{font-size:12px;color:#7a8aa0;margin:0 0 18px}pre{white-space:pre-wrap;font-family:inherit;font-size:13px}</style></head><body><h1>${esc(title)}</h1><p class="meta">云店+获客工作台 · ${esc(state.profile.company||'')} · ${esc(new Date().toLocaleString('zh-CN'))}</p><pre>${esc(content)}</pre></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),400);}
+
 async function exportPdf(id){await readArtifact(id);const content=artifactContents[id]||'';const t=(state.tasks||[]).find(x=>x.id===id);printPdf(t?t.name:'工作产物',content);}
 
 async function readArtifact(id){const t=(state.tasks||[]).find(x=>x.id===id);let content=artifactContents[id]||'';
@@ -77,7 +149,7 @@ if(action==='check-update')checkUpdate();
 if(action==='update-guide')modal('WorkBuddy 更新部署',`<div class="prompt">${esc(updatePrompt())}</div><p class="note">交给当前项目 WorkBuddy 执行；此页面不会直接更新代码。</p>`);
 if(action==='install-skills'){save('install-skills',{}).catch(e=>toast(e.message));}
 if(action==='nav'){navigate(id);page=id;render();$('#sidebar').classList.remove('open');if(page==='settings'&&!updateInfo)checkUpdate();}
-if(action==='profile'){const p=state.profile;form('企业知识库与项目资料',`<div class="form-grid">${[['company','企业名称'],['products','产品 / 服务'],['markets','目标市场'],['persona','买家画像'],['goal','获客目标'],['brand','品牌与业务约束'],['source','资料来源 / 文件路径'],['projectRef','WorkBuddy 项目名称 / 链接'],['spaceRef','关联空间名称 / 链接']].map(([k,v])=>field(k,v,p[k]||'',k==='goal'||k==='source')).join('')}</div><div class="actions"></div><p class="note">填写名称/链接不会自动关联云端空间；需在 WorkBuddy 中完成并验证。</p>`,'profile');}
+if(action==='profile'){const p=state.profile;form('企业知识库与项目资料',`<div class="form-grid">${[['company','企业名称'],['products','产品 / 服务'],['markets','目标市场'],['persona','买家画像'],['goal','获客目标'],['brand','品牌与业务约束'],['source','资料来源 / 文件路径'],['projectRef','WorkBuddy 项目名称 / 链接'],['spaceRef','关联空间名称 / 链接']].map(([k,v])=>field(k,v,p[k]||'',k==='goal'||k==='source')).join('')}</div><div class="actions">${state.cloud?button('从知识库填充','profile-autofill'):''}</div><p class="note">「从知识库填充」只读取项目 knowledge 目录下已保存的真实资料，由云端模型提取，资料中没有的字段留空；只填充未填写项，保存前请逐项核对。填写名称/链接不会自动关联云端空间；需在 WorkBuddy 中完成并验证。</p>`,'profile');}
 if(action==='record'){form('保存阶段业务记录',field('name','记录名称')+field('source','真实来源URL / 文件 / 客户反馈')+field('cycleId','轮次ID','cycle-1')+(recordFields[page]||[]).map(([k,n])=>field(k,n,'',true)).join(''),'record',{stage:page});}
 if(action==='record-task'){const r=state.records.find(x=>x.id===id);form('从业务记录创建技能任务',field('name','任务名称',r.name)+field('inputs','实际输入与上游资料',JSON.stringify(r,null,2),true)+field('instructions','具体工作步骤','读取对应技能，核对输入、证据与缺口，保存真实报告。',true)+field('acceptance','验收标准','来源可追溯，事实与假设分开，缺项明确，实际产物可读回。',true),'task',{stage:r.stage,cycleId:r.cycleId||'cycle-1'});}
 if(action==='audit-new'){form('创建全量验收台账','<label>站点平台<select name="platform"><option value="shopify">Shopify · 38项</option><option value="wordpress">WordPress · 26项</option></select></label>','audit-create');}
@@ -92,9 +164,16 @@ if(action==='artifact-link'){const t=state.tasks.find(t=>t.id===id);form('登记
 if(action==='knowledge-skill'){const instruction=`读取并调用 ${state.skills.knowledge.installedPath}，使用 yundian-growth-knowledge 技能。项目目录：${state.projectRoot}。整理 growth-workspace/knowledge/ 中的真实企业资料、来源、审核状态与缺口，保留原资料；优先使用当前本地知识库；客户需要外部资料时再关联ima或腾讯乐享并核验授权。没有工具时说明缺口，不伪造关联成功。实际更新知识文件和索引，然后刷新工作台。`;modal('企业知识库技能',`<div class="prompt">${esc(instruction)}</div><p class="note">在 WorkBuddy 当前项目执行。技能文件状态：${state.skills.knowledge.status==='installed'?'已安装，宿主加载待验证':'待安装或版本不同'}。</p>`);}
 if(action==='knowledge')form('添加真实知识资料',field('title','资料标题')+field('content','实际资料内容','',true)+field('source','来源 URL / 文件路径'),'knowledge');
 if(action==='feedback')form('记录真实销售反馈',`${field('leadId','稳定线索标识')}${field('source','获客渠道 / 上游产物')}${field('cycleId','轮次标识','cycle-1')}${field('result','实际联系 / 报价 / 成交结果')}${field('reason','有效或无效原因','',true)}${field('next','下一轮改进建议','',true)}`,'feedback');
-if(action==='task'){const t=state.tasks.find(t=>t.id===id);modal(t.name,`<p>${esc(label(t.stage))} · ${esc(statuses[t.status])}</p><div class="prompt">${esc(prompt(t))}</div><p class="note">复制指令到 WorkBuddy 当前项目执行；这里不会模拟调用模型。WorkBuddy 执行后将实际产物回写到客户本地目录，再刷新查看。</p><div class="actions">${button('复制 WorkBuddy 指令','copy',id,true)}${button('保存实际产物','artifact',id)}${button('登记网站链接','artifact-link',id)}${(t.artifact)?button('查看产物','view-artifact',id):''}${t.artifact?button('记录验收','review',id):''}</div>`);}
+if(action==='task'){const t=state.tasks.find(t=>t.id===id);modal(t.name,`<p>${esc(label(t.stage))} · ${esc(statuses[t.status])}</p><div class="prompt">${esc(prompt(t))}</div><p class="note">复制指令到 WorkBuddy 当前项目执行；这里不会模拟调用模型。WorkBuddy 执行后将实际产物回写到客户本地目录，再刷新查看。</p><div class="actions">${button('复制 WorkBuddy 指令','copy',id,true)}${state.cloud?button('AI 生成草稿','ai-run',id):''}${button('保存实际产物','artifact',id)}${button('登记网站链接','artifact-link',id)}${(t.artifact)?button('查看产物','view-artifact',id):''}${t.artifact?button('记录验收','review',id):''}</div>`);}
 if(action==='view-artifact')viewArtifact(id).catch(e=>toast(e.message));
 if(action==='pdf')exportPdf(id).catch(e=>toast(e.message));
+/* 页面内草稿相关 action（2026-10-06 定制，随主线 v0.15.0 移植） */
+if(action==='ai-run')runSkillDraft(id);
+if(action==='ai-rerun')generateDraft(id);
+if(action==='ai-run-save'){if(!aiRun.text.trim()){toast('还没有生成内容');return;}save('artifact',{id,content:aiRun.text}).then(()=>{$('#dialog').close();toast('草稿已保存为产物，状态待验收');}).catch(e=>toast(e.message));}
+if(action==='ai-run-pdf'){if(!aiRun.text.trim()){toast('还没有生成内容');return;}const t=state.tasks.find(x=>x.id===id);printPdf((t?t.name:'工作产物')+' · AI 草稿（待核验）',aiRun.text);}
+if(action==='ai-copy'){navigator.clipboard.writeText(aiRun.text||'').then(()=>toast('已复制草稿全文')).catch(()=>toast('请手动选中复制'));}
+if(action==='profile-autofill')autofillProfile();
 if(action==='copy'){navigator.clipboard.writeText(prompt(state.tasks.find(t=>t.id===id))).then(()=>toast('指令已复制，请在 WorkBuddy 当前项目执行')).catch(()=>toast('请手动选中并复制任务指令'));}
 if(action==='artifact'){form('保存实际工作产物',field('content','产物内容（含来源与结果）','',true),'artifact',{id});}
 if(action==='review'){const a=state.artifacts.find(a=>a.taskId===id&&a.path===('growth-workspace/artifacts/'+id+'.md').replaceAll('/',String.fromCharCode(92)))||state.artifacts.find(a=>a.taskId===id);form('记录客户验收',field('review','实际验收依据','',true),'review',{id,contentHash:a?.contentHash});}

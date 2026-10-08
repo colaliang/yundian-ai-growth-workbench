@@ -560,8 +560,28 @@ export function createServer(store, port) {
                         return respond({ error: '版本检查失败，请稍后重试或在WorkBuddy检查仓库版本' }, 502);
                     }
                 }
-                if (pathname === '/api/state')
-                    return respond({ ...store.load(), token, projectRoot: store.root, cloud: cloudConfig });
+                if (pathname === '/api/state') {
+                    const st = store.load();
+                    /* 知识库同步自检：与 .sync-manifest.json 基线比对，
+                       用于发现「本地改了但忘了同步到发布目录」或「线上被改坏」。 */
+                    let kbCheck = { status: 'unknown', total: 0, present: 0, drifted: [], at: null };
+                    try {
+                        const mf = JSON.parse(fs.readFileSync(path.join(APP, '.sync-manifest.json'), 'utf8'));
+                        const names = Object.keys(mf).filter(f => f.endsWith('.md'));
+                        const kbDir = path.join(store.base, 'knowledge');
+                        const drifted = names.filter(f => {
+                            const p = path.join(kbDir, f);
+                            if (!fs.existsSync(p)) return true;
+                            return crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex') !== mf[f];
+                        });
+                        const present = fs.existsSync(kbDir)
+                            ? fs.readdirSync(kbDir).filter(f => f.endsWith('.md')).length : 0;
+                        kbCheck = { status: drifted.length ? 'drift' : 'ok', total: names.length, present, drifted, at: mf.__at || null };
+                    } catch {
+                        kbCheck = { status: 'no-baseline', total: 0, present: 0, drifted: [], at: null };
+                    }
+                    return respond({ ...st, token, projectRoot: store.root, cloud: cloudConfig, kbCheck });
+                }
                 if (pathname.startsWith('/api/artifacts/')) {
                     const parts = pathname.split('/'), a = store.artifact(parts[3]);
                     if (parts[4] === 'file') {
