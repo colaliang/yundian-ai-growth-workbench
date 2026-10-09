@@ -109,33 +109,59 @@ const recordFields={
 'sales-feedback':[['leadId','稳定线索ID'],['result','实际联系/报价/成交结果'],['next','下一轮建议']],
 'next-cycle':[['hypothesis','改进假设'],['result','实际销售反馈依据'],['next','验证任务与停止标准']]
 };
-/* ---- 连接容错（云店+ 定制 2026-10-08；放在本文件而非 web/api.js，避免主线更新被覆盖）----
-   现象：页面报「Failed to execute 'json' on 'Response': Unexpected end of JSON input」。
-   根因：线上部署在网关后会休眠，首个请求冷启动实测 7 秒，此时网关偶发返回「200 + 空响应体」，
-   而 api.request 无条件 response.json() 会抛错，且原实现只请求一次、失败不重试，
-   页面就此永久停在错误页（用户必须手动刷新）。
-   处理：GET 不带 JSON Content-Type → 先取文本判空再解析 → 退避重试 →
-   用 /healthz 区分「应用冷启动中」与「接口异常」→ 给出可点击的重连按钮，并按场景给提示。 */
-const STATE_RETRY=[0,1000,3000];
+/* ---- 连接容错（云店+ 定制 2026-10-08/09；放在本文件而非 web/api.js，避免主线更新被覆盖）----
+   现象：页面报「Failed to execute 'json' on 'Response': Unexpected end of JSON input」，
+        或停在「项目资料未连接」。
+   根因：线上应用空闲后会休眠。唤醒期间网关先给出不可用响应 —— 实测撞到过两种：
+         「200 + 空响应体」和「404 + 空响应体」，应用起来之后才恢复 200。
+         唤醒本身要十几秒，而最初实现只重试约 4 秒就放弃，用户必须手点「重新连接」。
+   处理：
+     1) GET 不带 JSON Content-Type；先取文本判空再解析；网关状态码单独识别并说人话
+     2) 前台退避重试（0 / 0.8s / 2s / 4s）
+     3) 仍失败则进入后台自动重连：每 4 秒一次、最多 10 次，成功后自动渲染，
+        全程不需要用户点任何按钮（这才是「休眠唤醒」场景该有的行为）
+     4) 保留手动「重新连接」按钮兜底
+     5) 只有自动重连也失败，才提示本地/线上启动命令 —— 那属于部署问题，不是唤醒问题 */
+const STATE_RETRY=[0,800,2000,4000];
+const GATEWAY_STATUS=[404,502,503,504];
+const gatewayHint=s=>s===404?'应用尚未就绪（网关返回 404）：线上空闲后会休眠，唤醒通常需要十几秒':('应用暂时不可用（网关返回 '+s+'）：正在自动重连');
+async function fetchStateOnce(){
+ const r=await fetch('/api/state',{cache:'no-store',headers:{Accept:'application/json'}});
+ const text=await r.text();
+ if(!r.ok&&GATEWAY_STATUS.includes(r.status)){const e=Error(gatewayHint(r.status));e.gateway=true;throw e;}
+ if(!text.trim())throw Error('服务端返回了空响应体（HTTP '+r.status+'）');
+ let value;try{value=JSON.parse(text);}catch{throw Error('服务端返回了非 JSON 内容：'+text.slice(0,60));}
+ if(!r.ok)throw Error((value&&value.error)||('请求失败（HTTP '+r.status+'）'));
+ return value;}
 async function fetchState(onProgress){let last;
  for(let i=0;i<STATE_RETRY.length;i++){
   if(STATE_RETRY[i]){if(onProgress)onProgress(i);await new Promise(r=>setTimeout(r,STATE_RETRY[i]));}
-  try{
-   const r=await fetch('/api/state',{cache:'no-store',headers:{Accept:'application/json'}});
-   const text=await r.text();
-   if(!text.trim())throw Error('服务端返回了空响应体（HTTP '+r.status+'）');
-   let value;try{value=JSON.parse(text);}catch{throw Error('服务端返回了非 JSON 内容：'+text.slice(0,60));}
-   if(!r.ok)throw Error((value&&value.error)||('请求失败（HTTP '+r.status+'）'));
-   return value;
-  }catch(e){last=e;}}
+  try{return await fetchStateOnce();}catch(e){last=e;}}
  throw last;}
 async function appAlive(){try{const r=await fetch('/healthz',{cache:'no-store'});return r.ok;}catch{return false;}}
-async function refresh(){const m=$('#main');
- try{state=await fetchState(i=>{if(m)m.innerHTML=`<div class="panel"><h1>正在重新连接项目资料…</h1><p>第 ${i+1} 次尝试，线上应用冷启动可能需要几秒。</p></div>`;});token=state.token;render();return;}
+let recoverTimer=null;
+function stopRecover(){if(recoverTimer){clearInterval(recoverTimer);recoverTimer=null;}}
+function errorPanel(e,tip,status){return `<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>${esc(tip)}</p><p id="recover-note" class="note">${esc(status)}</p><p class="note">若长时间无法恢复，通常属于部署问题，而不是唤醒：<br>本地启动（在 wb-public 目录下）：<code>node server.js --root 客户项目目录 --port 8767</code><br>注意不要用 <code>npm start</code>：它执行的是 <code>node server.ts</code>，而发布目录里只有编译产物 server.js，会直接报 Cannot find module。<br>线上部署：启动命令须为 <code>node server.js --root /workspace --public</code></p><div class="actions">${button('立即重新连接','retry-state','',true)}</div></div>`;}
+async function refresh(){const m=$('#main');stopRecover();
+ try{state=await fetchState(i=>{if(m)m.innerHTML=`<div class="panel"><h1>正在连接项目资料…</h1><p>第 ${i+1} 次尝试，线上应用唤醒可能需要十几秒。</p></div>`;});token=state.token;render();return;}
  catch(e){
   const alive=await appAlive();
-  const tip=alive?'应用已在线，但读取项目资料失败，请点下方「重新连接」。':'应用正在冷启动或暂时不可用（线上空闲后会休眠），点「重新连接」通常即可成功。';
-  if(m)m.innerHTML=`<div class="panel"><h1>项目资料未连接</h1><p>${esc(e.message)}</p><p>${esc(tip)}</p><p class="note">本地启动（在 wb-public 目录下）：<code>node server.js --root 客户项目目录 --port 8767</code><br>注意不要用 <code>npm start</code>：它执行的是 <code>node server.ts</code>，而发布目录里只有编译产物 server.js，会直接报 Cannot find module。<br>线上部署：启动命令须为 <code>node server.js --root /workspace --public</code></p><div class="actions">${button('重新连接','retry-state','',true)}</div></div>`;}}
+  const tip=alive?'应用已在线，但读取项目资料失败。':'应用正在唤醒或暂时不可用 —— 线上空闲后会休眠，唤醒需要十几秒。';
+  if(m)m.innerHTML=errorPanel(e,tip,'正在自动重连，请稍候（通常十几秒内自动恢复，无需任何操作）…');
+  startRecover();}}
+/* 后台自动重连：每 4 秒一次、最多 10 次（约 40 秒）。成功即自动渲染并提示，用户不用点按钮。 */
+function startRecover(){
+ stopRecover();let n=0;
+ recoverTimer=setInterval(async()=>{
+  n++;
+  try{
+   const s=await fetchStateOnce();state=s;token=s.token;stopRecover();render();toast('已重新连接，项目资料已加载');
+  }catch(e){
+   const note=$('#recover-note');
+   if(note)note.textContent='已自动重连 '+n+'/10 次：'+e.message;
+   if(n>=10){stopRecover();if(note)note.textContent='自动重连未成功。请点「立即重新连接」，或按下方命令确认服务是否已启动。';}
+  }
+ },4000);}
 /* ---- save：移植到 v0.15.0 时遗漏，但被 8 处写操作引用（表单、产物、头像、任务、技能安装…），
    缺失会让线上所有保存动作抛 ReferenceError，且页面上看不出原因。补回时按新版调整：
    /api/save 只回 store.load()，不含 token / projectRoot / cloud / kbCheck，需就地保留；
