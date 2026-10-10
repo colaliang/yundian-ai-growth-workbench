@@ -12,3 +12,7 @@ customer-data/
 Thumbs.db
 node_modules/
 cloud-config.json
+
+.workbench-private/
+owner.json
+publisher.json

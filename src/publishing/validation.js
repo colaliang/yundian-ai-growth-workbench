@@ -1,0 +1,47 @@
+import crypto from 'node:crypto';
+const ident = (v) => typeof v === 'string' && /^\w[\w-]{0,127}$/.test(v);
+const date = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
+function baseValidatePublishingRecord(v, workspaceId, family) { if (!v || v.workspaceId !== workspaceId || !ident(v.id) || !ident(v.itemId) || typeof v.contentHash !== 'string' || !/^[a-f0-9]{64}$/.test(v.contentHash) || !Array.isArray(v.channelIds) || !v.channelIds.length || v.channelIds.some((x) => !ident(x)) || new Set(v.channelIds).size !== v.channelIds.length || !['immediate', 'scheduled'].includes(v.mode) || !(v.plannedAt === null || date(v.plannedAt)) || v.mode === 'scheduled' && v.plannedAt === null || v.mode === 'immediate' && v.plannedAt !== null || !Number.isSafeInteger(v.maxCredits) || v.maxCredits !== v.channelIds.length)
+    throw Error('Invalid publishing record'); if (family === 'publish-confirmations') {
+    if (typeof v.accountFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(v.accountFingerprint) || !date(v.expiresAt) || !Number.isSafeInteger(v.balance) || v.balance < 0 || !Array.isArray(v.acknowledgedAttemptIds) || v.acknowledgedAttemptIds.some((x) => !ident(x)))
+        throw Error('Invalid confirmation');
+    return v;
+} if (!ident(v.confirmationId) || !['creating', 'publishing', 'settled'].includes(v.phase) || !['scheduled', 'publishing', 'published', 'partial', 'failed', 'unknown'].includes(v.status) || !Number.isSafeInteger(v.reservedCredits) || v.reservedCredits < 0 || v.reservedCredits > v.maxCredits || v.actualCredits !== null || typeof v.budgetDay !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.budgetDay) || typeof v.idempotencyKey !== 'string' || !/^[a-f0-9]{64}$/.test(v.idempotencyKey) || !(v.postId === null || ident(v.postId)) || !(v.scheduledAt === null || date(v.scheduledAt)) || !(v.error === null || typeof v.error === 'string') || !date(v.createdAt) || !date(v.updatedAt) || !Array.isArray(v.results) || new Set(v.results.map((r) => r?.channelId)).size !== v.results.length || v.results.some((r) => !r || !v.channelIds.includes(r.channelId) || typeof r.status !== 'string' || r.pending !== undefined && typeof r.pending !== 'boolean' || ['error', 'url', 'platformPostId'].some(k => r[k] !== undefined && typeof r[k] !== 'string')))
+    throw Error('Invalid attempt'); return v; }
+export const quotaTimezone = 'Asia/Shanghai';
+export const publicationKey = (c) => crypto.createHash('sha256').update(JSON.stringify([c.workspaceId, c.contentHash, c.channelIds.slice().sort(), c.mode, c.plannedAt, c.id])).digest('hex');
+export function validateRemoteResults(results, ids) { if (!Array.isArray(results) || new Set(results.map((r) => r?.channelId)).size !== results.length || results.some((r) => !r || !ids.includes(r.channelId) || !['draft', 'pending', 'scheduled', 'processing', 'publishing', 'published', 'failed', 'unknown'].includes(r.status) || r.pending !== undefined && typeof r.pending !== 'boolean' || ['error', 'url', 'platformPostId'].some(k => r[k] !== undefined && typeof r[k] !== 'string')))
+    throw Error('Malformed remote target results'); }
+export function validateRemotePost(post, ids) { if (!post || !ident(post.id) || !['draft', 'pending', 'scheduled', 'processing', 'publishing', 'published', 'partial', 'failed', 'unknown'].includes(post.status) || !(post.scheduledAt === null || date(post.scheduledAt)))
+    throw Error('Malformed remote post'); validateRemoteResults(post.postChannels, ids); }
+export function scheduledEvidence(post, ids, plannedAt) { return post.status === 'scheduled' && post.scheduledAt === plannedAt && ids.every(id => post.postChannels.some(r => r.channelId === id && ['pending', 'scheduled', 'processing'].includes(r.status))); }
+export function resultStatus(a) { const selected = a.channelIds.map(id => a.results.find(r => r.channelId === id)), success = selected.filter(r => r?.status === 'published' && !r.pending).length; if (success === selected.length)
+    return 'published'; if (success)
+    return 'partial'; if (selected.every(r => r?.status === 'failed' && !r.pending))
+    return 'failed'; if (selected.some(r => r?.pending || ['processing', 'publishing'].includes(r?.status ?? '')))
+    return 'publishing'; return 'unknown'; }
+export function validatePublishingRecord(v, workspaceId, family) { baseValidatePublishingRecord(v, workspaceId, family); if (family === 'publish-confirmations')
+    return v; validateRemoteResults(v.results, v.channelIds); if (v.reservedCredits !== v.maxCredits || v.postId === null && (v.results.length !== 0 || v.scheduledAt !== null) || Date.parse(v.updatedAt) < Date.parse(v.createdAt) || v.phase === 'creating' && (v.postId !== null || v.results.length !== 0) || v.phase === 'publishing' && !v.postId || ['published', 'partial', 'failed', 'scheduled'].includes(v.status) && (!v.postId || v.phase !== 'settled') || v.status === 'scheduled' && (v.mode !== 'scheduled' || v.scheduledAt !== v.plannedAt || !scheduledEvidence({ id: v.postId, status: 'scheduled', scheduledAt: v.scheduledAt, postChannels: v.results }, v.channelIds, v.plannedAt)) || ['published', 'partial', 'failed'].includes(v.status) && resultStatus(v) !== v.status)
+    throw Error('Invalid publication truth or reservation'); return v; }
+export function validatePublishingDataset(rows, workspaceId) { const relevant = rows.filter(r => ['content-items', 'publish-confirmations', 'publish-attempts'].includes(r.family)), byFamily = (family) => relevant.filter(r => r.family === family); const aliases = new Set(); for (const r of relevant) {
+    const key = r.family + '/' + r.filename.toLowerCase();
+    if (aliases.has(key))
+        throw Error('Duplicate publication alias');
+    aliases.add(key);
+} for (const r of relevant)
+    if (r.filename !== r.value.id + '.json' || r.value.workspaceId !== workspaceId)
+        throw Error('Publication filename or workspace mismatch'); const confirmations = byFamily('publish-confirmations').map(r => validatePublishingRecord(r.value, workspaceId, r.family)), attempts = byFamily('publish-attempts').map(r => validatePublishingRecord(r.value, workspaceId, r.family)), items = byFamily('content-items').map(r => r.value); if (new Set(attempts.map(a => a.confirmationId)).size !== attempts.length)
+    throw Error('Duplicate confirmation attempts'); for (const c of confirmations) {
+    if (!items.some(i => i.id === c.itemId) || c.acknowledgedAttemptIds.some(id => !attempts.some(a => a.id === id && a.itemId === c.itemId && a.mode === 'scheduled')))
+        throw Error('Unresolved confirmation references');
+} for (const a of attempts) {
+    const c = confirmations.find(c => c.id === a.confirmationId), item = items.find(i => i.id === a.itemId);
+    if (!c || !item || !item.publishAttemptIds.includes(a.id) || ['itemId', 'workspaceId', 'contentHash', 'mode', 'plannedAt', 'maxCredits'].some(k => c[k] !== a[k]) || JSON.stringify(c.channelIds) !== JSON.stringify(a.channelIds) || a.idempotencyKey !== publicationKey(c))
+        throw Error('Incoherent publication references');
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: quotaTimezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(a.plannedAt ?? a.createdAt));
+    if (a.budgetDay !== parts)
+        throw Error('Invalid quota day');
+} for (const item of items) {
+    if (!Array.isArray(item.publishAttemptIds) || new Set(item.publishAttemptIds).size !== item.publishAttemptIds.length || item.publishAttemptIds.some((id) => !attempts.some(a => a.id === id && a.itemId === item.id)) || item.publisherPostId !== null && !attempts.some(a => a.itemId === item.id && a.postId === item.publisherPostId))
+        throw Error('Unresolved content publication history');
+} }

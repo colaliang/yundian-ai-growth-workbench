@@ -27,3 +27,10 @@ SEO/GEO验收交给yundian-growth-seo-geo技能，建站实施交给建站技能
 安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。仅旧版无工作台元数据且非定时的未终结任务保留独立回写。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
 
 应用任务的已安装回写命令必须带 --application "实际工作台应用目录"（复制指令提供），并与任务位置匹配；不能把客户任务或产物指定的目录自动作为代码加载。Python 命令同样支持此参数。能力不足时停止登记。
+## 结构化内容计划与发布回执
+
+生成 content-plan.json：schemaVersion=1、当前 workspaceId、items；每项包含 title、text、productRef、language、contentType、channelIds、remoteMediaIds、assetRefs、plannedAt（ISO UTC 或 null）、timezone（IANA）、cycleId、sourceTaskId。稳定 ID 只用于已存在项；保存到客户 growth-workspace/artifacts 并通过真实主技能 submit_result 回写来源任务。由工作台导入预览及冲突确认录入，不直接写 content-items，不覆盖客户编辑。
+
+本技能生成草稿与排期计划。客户在发布面板选择当前账号实际渠道和媒体、保存并批准当前摘要，再确认正文、素材、时间与数值积分预算；只有后端提交的真实逐渠道回执能证明发布。API Key 不得写入指令、剪贴板、产物、浏览器状态或备份。未配置密钥/预算仍可生成本地计划。
+
+回执保留 itemId、attemptId、contentHash、postId、逐渠道状态、公开 URL、预留积分；actualCredits=null 表示供应商未提供实际扣费。unknown/partial/pending/scheduled 不算全部发布；只刷新 get_post，不自动重发，编辑不会取消旧排期。回执归属来源 task.stage，内容来源留在内容项目；仅真实 social-media 来源任务进入社媒成果。content-items/publish-attempts/publish-confirmations 已纳入普通备份，服务器私密配置须独立保护。

@@ -1,1 +1,19 @@
-[{"id":"cola-services","expertId":"cola","modules":["site-and-content","seo","seo-geo","google-ads","facebook-ads","sales-feedback","next-cycle"],"scope":"AI建站、WordPress、SEO、Google Ads、Facebook广告、数据分析；具体服务范围联系确认","paid":true}]
+[
+  {
+    "id": "cola-services",
+    "expertId": "cola",
+    "modules": [
+      "site-and-content",
+      "seo-geo",
+      "content-operations",
+      "acquisition",
+      "next-cycle",
+      "social-media",
+      "facebook-ads",
+      "google-ads",
+      "email-outreach"
+    ],
+    "scope": "AI建站、WordPress、SEO、Google Ads、Facebook广告、数据分析；具体服务范围联系确认",
+    "paid": true
+  }
+]

@@ -1,3 +1,4 @@
+import { publicationFamilies, validatePublicationPath } from "./publication-path.js";
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -39,7 +40,24 @@ export class WorkspaceStore {
     }
     put(file, value) { this.write(file, JSON.stringify(value, null, 2)); }
     files(folder, ext) {
+        const known = publicationFamilies.includes(folder.toLowerCase());
+        if (known && fs.existsSync(this.base))
+            for (const name of fs.readdirSync(this.base))
+                validatePublicationPath('growth-workspace/' + name);
         const dir = this.checked(path.join(this.base, folder));
+        if (known && fs.existsSync(dir)) {
+            const aliases = new Set();
+            for (const name of fs.readdirSync(dir)) {
+                validatePublicationPath('growth-workspace/' + folder + '/' + name);
+                const file = this.checked(path.join(dir, name));
+                if (!fs.statSync(file).isFile())
+                    throw Error('Noncanonical publication path');
+                const value = this.json(file), key = name.toLowerCase();
+                if (name !== value.id + '.json' || aliases.has(key))
+                    throw Error('Publication filename or alias mismatch');
+                aliases.add(key);
+            }
+        }
         return fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith(ext)).sort().map(n => this.checked(path.join(dir, n))) : [];
     }
 }

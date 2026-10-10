@@ -40,3 +40,7 @@ description: 在 WorkBuddy 客户项目初始化本地知识、路由全域获�
 安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。仅旧版无工作台元数据且非定时的未终结任务保留独立回写。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
 
 应用任务的已安装回写命令必须带 --application "实际工作台应用目录"（复制指令提供），并与任务位置匹配；不能把客户任务或产物指定的目录自动作为代码加载。Python 命令同样支持此参数。能力不足时停止登记。
+
+## 内容发布
+
+内容及社媒技能生成结构化 content-plan.json，经工作台受控导入、版本审核与逐次发布确认。密钥只由服务器配置，禁止写入复制指令、技能文件或浏览器状态。回执按来源任务 stage 归属，逐渠道核验 published/partial/unknown/scheduled/pending；不自动重发，不取消远端排期。参阅 references/WORKFLOWS.md 和 docs/content-publishing.zh-CN.md。

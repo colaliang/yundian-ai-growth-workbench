@@ -3,3 +3,13 @@ aside{overflow-y:auto}.brand,.project-label,nav,aside footer{flex-shrink:0}
 
 aside{overflow-y:auto}.row>div{min-width:0}.prompt{overflow-wrap:anywhere}nav button[aria-current=page]{background:#edf4ff;color:var(--blue)}
 .result-row{overflow-wrap:anywhere}.result-row>div{max-width:100%}
+
+.module-submenu{padding-left:14px;border-left:1px solid #ddd}.module-submenu button{font-size:13px}#sidebar{overflow-y:auto} .result-filters{display:flex;flex-wrap:wrap;gap:8px}.result-filters input,.result-filters select{min-width:0;max-width:100%}
+
+.result-row[hidden]{display:none!important}
+
+.content-table{overflow-x:auto}.content-table table{min-width:900px;width:100%;border-collapse:collapse}.content-table td,.content-table th{padding:10px;text-align:left;border-bottom:1px solid #dbe4ee;vertical-align:top}.content-filters{display:flex;gap:12px;flex-wrap:wrap}.content-filters label{min-width:130px;flex:1}.content-week{display:grid;grid-template-columns:repeat(7,minmax(140px,1fr));overflow:auto;gap:10px}.content-week article{padding:12px;background:#f5f8fc;border-radius:10px}.content-week button{white-space:normal;text-align:left;width:100%}.content-plan textarea{min-height:140px;width:100%}.content-plan pre{white-space:pre-wrap;overflow-wrap:anywhere}.content-plan [data-editor]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.content-plan [data-editor] h3,.content-plan [data-editor] p{grid-column:1/-1}@media(max-width:600px){.content-plan [data-editor]{grid-template-columns:1fr}.content-filters label{min-width:110px}}
+
+.crm-layout{display:grid;grid-template-columns:minmax(200px,1fr) minmax(0,2fr);gap:24px}.crm article{border-bottom:1px solid var(--border,#ddd);padding:16px 0;overflow-wrap:anywhere}.crm-filters,.crm-form{display:flex;flex-wrap:wrap;gap:12px}.crm-form label{display:flex;flex-direction:column;flex:1 1 180px}.crm pre{white-space:pre-wrap;overflow-wrap:anywhere}.crm textarea{width:100%;min-height:100px}.crm-form fieldset{flex:1 1 100%}.crm small{display:block}.crm button{margin:4px}.crm input,.crm select{max-width:100%}@media(max-width:600px){.crm-layout{grid-template-columns:1fr}.crm-filters label{width:100%}.crm-form label{flex-basis:100%}.crm{padding:12px;min-width:0}}
+
+.crm-filters label:has(input[type="checkbox"]){display:flex;align-items:center;gap:8px}.crm input[type="checkbox"]{width:auto}

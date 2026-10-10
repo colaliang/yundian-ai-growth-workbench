@@ -1,3 +1,8 @@
+import { crmFamilies, validateCrmDataset } from "../crm/validation.js";
+import { validatePublicationPath } from "./publication-path.js";
+import { validatePublishingDataset } from "../publishing/validation.js";
+import { validatePublishingRecord } from "../publishing/service.js";
+import { validateContentRecord } from "../content/service.js";
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -15,6 +20,7 @@ export function migrateWorkspace(root) {
             const target = store.checked(path.join(dir, entry.name));
             if (entry.name === 'migration-backups')
                 continue;
+            validatePublicationPath('growth-workspace/' + path.relative(store.base, target).split(path.sep).join('/'));
             if (entry.isSymbolicLink())
                 throw Error('Invalid symlink in workspace');
             if (entry.isDirectory())
@@ -41,11 +47,23 @@ export function migrateWorkspace(root) {
     };
     walk(store.base);
     // Existing history must be validated even when metadata has not yet been created.
+    if (!fs.existsSync(file) && [...originals.keys()].some(file => crmFamilies.includes(path.relative(store.base, file).split(path.sep)[0])))
+        throw Error('CRM records require an existing workspace manifest before initialization');
     if (!fs.existsSync(file))
         return { changed: false, backupPath: null, schemaVersion: 3, contractVersion: CONTRACT_VERSION };
     const workspace = JSON.parse(originals.get(file).toString('utf8').replace(/^\uFEFF/, ''));
     if (!workspace || typeof workspace !== 'object' || Array.isArray(workspace))
         throw Error('Invalid workspace');
+    for (const [file, bytes] of originals)
+        if (path.dirname(file) === path.join(store.base, 'content-items'))
+            validateContentRecord(JSON.parse(bytes.toString('utf8')), workspace.workspaceId);
+    for (const [file, bytes] of originals) {
+        const family = path.basename(path.dirname(file));
+        if (['publish-attempts', 'publish-confirmations'].includes(family))
+            validatePublishingRecord(JSON.parse(bytes.toString('utf8')), workspace.workspaceId, family);
+    }
+    validatePublishingDataset([...originals].filter(([file]) => ['content-items', 'publish-confirmations', 'publish-attempts'].includes(path.basename(path.dirname(file)))).map(([file, bytes]) => ({ family: path.basename(path.dirname(file)), filename: path.basename(file), value: JSON.parse(bytes.toString('utf8')) })), workspace.workspaceId);
+    validateCrmDataset([...originals].filter(([file]) => file.endsWith('.json') && [...crmFamilies, 'tasks', 'artifacts', 'feedback', 'records'].includes(path.basename(path.dirname(file)))).map(([file, bytes]) => ({ family: path.basename(path.dirname(file)), filename: path.basename(file), value: JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, '')) })), workspace.workspaceId);
     if (workspace.contractVersion === 2 && workspace.schemaVersion === 3)
         return { changed: false, backupPath: null, schemaVersion: 3, contractVersion: 2 };
     if (workspace.schemaVersion !== undefined && ![1, 2, 3].includes(workspace.schemaVersion))

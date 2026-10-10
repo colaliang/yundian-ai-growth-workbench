@@ -1,3 +1,8 @@
+import {crmFamilies,validateCrmRecord,validateCrmDataset} from '../crm/validation.ts';
+import {validatePublicationPath} from '../storage/publication-path.ts';
+import {validatePublishingDataset} from '../publishing/validation.ts';
+import {validatePublishingRecord} from '../publishing/service.ts';
+import {validateContentRecord} from '../content/service.ts';
 import {safeArtifactUrl} from '../domain/artifacts.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,7 +11,7 @@ import {WorkspaceStore} from '../storage/workspace-store.ts';
 import type {Snapshot,BackupAdapter} from './adapter.ts';
 const hash=(bytes:Buffer)=>crypto.createHash('sha256').update(bytes).digest('hex');
 function workspace(store:WorkspaceStore){const w=store.json(path.join(store.base,'workspace.json'));if(w.schemaVersion!==3||w.contractVersion!==2||typeof w.workspaceId!=='string'||!w.workspaceId)throw Error('Unsupported workspace schema');return w;}
-function safe(store:WorkspaceStore,relative:string){if(typeof relative!=='string'||!relative||relative.includes('\\')||relative.includes(':')||relative.split('/').some(x=>!x||x==='.'||x==='..'||/[. ]$/.test(x)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(x))||!relative.startsWith('growth-workspace/'))throw Error('Invalid snapshot path');const result=path.join(store.root,relative);let cursor=store.root;for(const part of relative.split('/')){cursor=path.join(cursor,part);const stat=fs.lstatSync(cursor,{throwIfNoEntry:false});if(stat?.isSymbolicLink())throw Error('Snapshot symlink rejected');}return store.checked(result);}
+function safe(store:WorkspaceStore,relative:string){if(typeof relative!=='string'||!relative||relative.includes('\\')||relative.includes(':')||relative.split('/').some(x=>!x||x==='.'||x==='..'||/[. ]$/.test(x)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(x))||!relative.startsWith('growth-workspace/'))throw Error('Invalid snapshot path');validatePublicationPath(relative);const result=path.join(store.root,relative);let cursor=store.root;for(const part of relative.split('/')){cursor=path.join(cursor,part);const stat=fs.lstatSync(cursor,{throwIfNoEntry:false});if(stat?.isSymbolicLink())throw Error('Snapshot symlink rejected');}return store.checked(result);}
 export function createSnapshot(root:string):Snapshot{const store=new WorkspaceStore(root),w=workspace(store),files:Snapshot['files']=[];function walk(folder:string){for(const entry of fs.readdirSync(folder,{withFileTypes:true})){const file=path.join(folder,entry.name),relative=path.relative(store.root,file).split(path.sep).join('/');safe(store,relative);if(entry.isDirectory())walk(file);else if(entry.isFile()){const bytes=fs.readFileSync(file);files.push({path:relative,checksum:hash(bytes),data:bytes.toString('base64')});}else throw Error('Unsupported snapshot file');}}walk(store.base);return {id:crypto.randomUUID(),workspaceId:w.workspaceId,schemaVersion:3,contractVersion:2,createdAt:new Date().toISOString(),files:files.sort((a,b)=>a.path.localeCompare(b.path))};}
 type Row=Record<string,any>;
 const object=(value:any):value is Row=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -18,6 +23,9 @@ function structured(value:any,family:string,workspaceId:string,legacy=false):voi
  const scopes=(item:any):void=>{if(!item||typeof item!=='object')return;if(Object.hasOwn(item,'workspaceId')&&item.workspaceId!==workspaceId)throw Error('Snapshot record belongs to another workspace');for(const nested of Object.values(item))scopes(nested);};scopes(value);
  const unscoped=['workbench','records','feedback','audits'];
  if(!unscoped.includes(family)&&!Object.hasOwn(value,'workspaceId')&&!legacy)throw Error('Missing workspaceId in '+family);
+ if(['publish-attempts','publish-confirmations'].includes(family)){validatePublishingRecord(value,workspaceId,family);return;}
+ if(crmFamilies.includes(family)){validateCrmRecord(value,workspaceId,family);return;}
+ if(family==='content-items'){validateContentRecord(value,workspaceId);return;}
  if(family==='workbench'){if(!object(value.profile))throw Error('Invalid workbench profile');arrays('tasks','feedback');if(value.settings!==undefined&&!object(value.settings))throw Error('Invalid settings');for(const row of value.tasks)structured(row,'tasks',workspaceId,legacy);for(const row of value.feedback)structured(row,'feedback',workspaceId,legacy);return;}
  if(family==='audits'){if(value.schemaVersion!==1)throw Error('Invalid audit schema');strings('platform','technicalConclusion');arrays('items','observations');for(const item of value.items)if(!object(item)||typeof item.id!=='string'||typeof item.title!=='string')throw Error('Invalid audit item');return;}
  if(family==='knowledge-confirmations'){strings('path','contentHash','confirmedAt');return;}
@@ -39,7 +47,7 @@ function validated(root:string,snapshot:Snapshot){const store=new WorkspaceStore
  for(const row of rows){
   const canonical=row.relative.toLowerCase();
   if(rows.some(other=>other!==row&&other.relative.toLowerCase().startsWith(canonical+'/')))throw Error('Conflicting snapshot file paths');
-  const match=/^growth-workspace\/(workbench\.json|(?:tasks|receipts|reviews|records|feedback|schedules|artifacts|workflows|audits|knowledge-confirmations|daily-decisions|schedule-occurrences|delivery-programs)\/[^/]+\.json)$/.exec(canonical);
+  const match=/^growth-workspace\/(workbench\.json|(?:tasks|receipts|reviews|records|feedback|schedules|artifacts|workflows|audits|knowledge-confirmations|daily-decisions|schedule-occurrences|delivery-programs|content-items|publish-attempts|publish-confirmations|crm-companies|crm-contacts|crm-leads|crm-followups|crm-feedback-links)\/[^/]+\.json)$/.exec(canonical);
   if(!match)continue;
   const family=canonical==='growth-workspace/workbench.json'?'workbench':canonical.split('/')[1];
   // A missing scope is legacy only with exact original bytes in a captured migration backup
@@ -52,6 +60,10 @@ function validated(root:string,snapshot:Snapshot){const store=new WorkspaceStore
   });
   structured(JSON.parse(row.bytes.toString('utf8').replace(/^\uFEFF/,'')),family,w.workspaceId,legacy);
  }
+ const local=new Map<string,any>();for(const family of ['content-items','publish-confirmations','publish-attempts'])for(const file of store.files(family,'.json'))local.set(path.relative(store.root,file).split(path.sep).join('/'),{family,filename:path.basename(file),value:store.json(file)});
+ const incoming=new Map(local),effective=new Map(local);for(const row of rows){const family=row.relative.split('/')[1];if(['content-items','publish-confirmations','publish-attempts'].includes(family)&&row.relative.split('/').length===3){const v={family,filename:path.basename(row.file),value:JSON.parse(row.bytes.toString('utf8'))};incoming.set(row.relative,v);if(!local.has(row.relative))effective.set(row.relative,v);}}
+ validatePublishingDataset([...incoming.values()],w.workspaceId);validatePublishingDataset([...effective.values()],w.workspaceId);
+ const related=[...crmFamilies,'tasks','artifacts','feedback','records'];const crmLocal=new Map<string,any>();for(const family of related)for(const file of store.files(family,'.json'))crmLocal.set(path.relative(store.root,file).split(path.sep).join('/'),{family,filename:path.basename(file),value:store.json(file)});const crmIncoming=new Map(crmLocal),crmEffective=new Map(crmLocal);for(const row of rows){const family=row.relative.split('/')[1];if(related.includes(family)&&row.relative.split('/').length===3&&row.relative.endsWith('.json')){const record={family,filename:path.basename(row.file),value:JSON.parse(row.bytes.toString('utf8'))};crmIncoming.set(row.relative,record);if(!crmLocal.has(row.relative))crmEffective.set(row.relative,record);}}validateCrmDataset([...crmIncoming.values()],w.workspaceId);validateCrmDataset([...crmEffective.values()],w.workspaceId);
  for(const row of rows){let cursor=path.dirname(row.file);while(cursor!==store.root){const stat=fs.lstatSync(cursor,{throwIfNoEntry:false});if(stat&&!stat.isDirectory())throw Error('Restore parent is not directory');cursor=path.dirname(cursor);}}return {store,rows};}
 export interface RestoreResult {backupPath:string;restored:string[];conflicts:{path:string;local:string;incoming:string}[]}
 export function restoreSnapshot(root:string,snapshot:Snapshot):RestoreResult{const {store,rows}=validated(root,snapshot);const backupRoot=path.join(store.root,'.workbench-backups');if(fs.lstatSync(backupRoot,{throwIfNoEntry:false})?.isSymbolicLink())throw Error('Backup directory symlink rejected');const current=createSnapshot(root);const folder=store.checked(path.join(store.root,'.workbench-backups',crypto.randomUUID()));fs.mkdirSync(folder,{recursive:true});const backupPath=path.join(folder,'before-restore.json');fs.writeFileSync(backupPath,JSON.stringify(current),{flag:'wx'});const result:RestoreResult={backupPath,restored:[],conflicts:[]};for(const row of rows){if(fs.existsSync(row.file)){if(fs.readFileSync(row.file).equals(row.bytes))continue;const incoming=store.checked(path.join(folder,'incoming',row.relative));fs.mkdirSync(path.dirname(incoming),{recursive:true});fs.writeFileSync(incoming,row.bytes,{flag:'wx'});result.conflicts.push({path:row.relative,local:row.file,incoming});}else{fs.mkdirSync(path.dirname(row.file),{recursive:true});fs.writeFileSync(row.file,row.bytes,{flag:'wx'});result.restored.push(row.relative);}}return result;}

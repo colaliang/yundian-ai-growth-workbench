@@ -4,7 +4,7 @@
 
 **市场调研 → 产品机会 → 建站与内容 → 获客 → 客户背调 → 销售反馈 → 优化下一轮**
 
-本地客户独立目录是默认数据来源。网页提供工作台、企业知识库、获客技能、成果中心、专家与陪跑及设置；每日清单和定时计划按真实数据管理。网页不提供模型聊天或 AI 草稿调用。
+本地客户独立目录是默认数据来源。网页提供工作台、13个项目模块、客户CRM、企业知识库、获客技能及设置，成果在各项目内查看；每日清单和定时计划按真实数据管理。网页不提供模型聊天或 AI 草稿调用。
 
 ## 路径一：由 WorkBuddy 技能生成自定义工作台
 
@@ -42,7 +42,7 @@ WorkBuddy 执行可用的安装、启动和检查步骤。宿主授权、必要�
 
 ## 技能与成果
 
-企业知识库及14个业务入口共15个当前模块；保留历史 `seo-geo` 与 `site-and-content` 标识。技能目录提供官方版本、客户定制版本、用途、输入、成果和验收规则。完整注册表见 [registry.json](skills/registry.json)。
+业务区包含13个项目模块，SEO与GEO项目统一展示历史seo-geo以及独立seo/geo三个执行阶段，共15个执行阶段；企业知识库、客户CRM、技能目录与设置是工作台公共入口；成果在各业务项目内查看。保留历史 `seo-geo` 与 `site-and-content` 标识。技能目录提供官方版本、客户定制版本、用途、输入、成果和验收规则。完整注册表见 [registry.json](skills/registry.json)。
 
 统筹技能路由业务工作。新批次保留 taskId、workspaceId、skillId/skillVersion、输入快照、cycleId 与成果路径。WorkBuddy 保存真实文件并提交结构化回执，后端校验目录、版本和任务；客户按当前文件哈希验收。文件变化使旧验收失效，重跑创建新批次。销售反馈以 leadId、cycleId 保存，下一轮建议保留源轮次关联。复制、安装、上传链接均不能冒充执行完成。
 
@@ -59,7 +59,7 @@ npm run build
 npm run package:skills
 ```
 
-构建编译完整 `src/**/*.ts` 与 `server.ts`，入口保持 `server.js`；测试涵盖 `tests/*.test.ts`，兼容测试需要 Python。开发和验收指南见[迁移与能力边界](docs/migration-v2.zh-CN.md)。客户运行本地服务不需要开发依赖。
+构建编译完整 `src/**/*.ts` 与 `server.ts`，入口保持 `server.js`；统一测试涵盖 `tests/*.test.ts` 和 `tests/*.test.mjs`，兼容测试需要 Python。开发和验收指南见[迁移与能力边界](docs/migration-v2.zh-CN.md)。客户运行本地服务不需要开发依赖。
 
 本次是 **0.15.0 工作树构建**，未创建发布。`dist/skills-working-tree/` 生成17个独立 ZIP、1个总包及 `manifest.json`；每项记录技能声明版本、SHA-256、文件清单与 working-tree 标记，技能0.16.0声明不表示工作台0.16.0已发布。构建后选择[完整技能包](dist/skills-working-tree/yundian-growth-skills-v0.15.0-working-tree.zip)或[独立包目录](dist/skills-working-tree/)。同名定制技能不会被安装覆盖；更新官方内容必须先比较和保留客户版本。
 
@@ -67,7 +67,7 @@ npm run package:skills
 
 用户确认的[演示地址](https://yundian-growth-workbench.app.workbuddy.host/)仍为外部现有实例。本次没有部署或核验该地址运行当前工作树代码。
 
-`scripts/serve-public.mjs` 仅提供公共监听模式，**不是经认证的客户私有托管**。请求令牌与路径校验不构成公网用户认证或多租户隔离。公开演示只用隔离空白/公开资料目录；客户名单、联系方式、知识、成果和凭据不得放入公共演示实例。腾讯云私有托管需另行验证认证、客户隔离、存储与备份。旧匿名云表 SQL 和网页模型入口不适用当前工作台。
+公网监听启用所有者认证：未配置返回setupRequired，未登录受保护读取和写入返回401。部署前必须通过服务器本地CLI配置所有者，并验证HTTPS会话和后端直连隔离；该模式仅服务单客户单实例。公开演示只用隔离空白/公开资料目录；客户名单、联系方式、知识、成果和凭据不得放入公共演示实例。腾讯云私有托管需另行验证认证、客户隔离、存储与备份。旧匿名云表 SQL 和网页模型入口不适用当前工作台。
 
 ## 云店+与搞跨境的可乐哥
 
@@ -80,3 +80,5 @@ npm run package:skills
 客户对象保存到指定项目 `growth-workspace/`，定制技能位于客户 `.codebuddy/skills/`；不同客户使用独立目录。不要提交客户数据和凭据，Python旧后端不得与 Node 后端同时写入同一目录。
 
 前端组件在 `web/views/`，领域、调度、技能和备份代码在 `src/`；扩展入口维护 registry、真实技能、输入/产物/验收及回写契约。迁移前完整预检并备份，失败保留原字节与目录树。详见[迁移说明](docs/migration-v2.zh-CN.md)、[统筹技能](skills/yundian-growth-workbench/SKILL.md)。代码与技能采用 [MIT](LICENSE)，名称和logo遵守[品牌说明](BRANDING.md)。
+
+项目内成果、专家入口、内容列表/排期/远端媒体关联、CRM跟进和所有者部署步骤见[模块工作台指南](docs/module-workspace-guide.zh-CN.md)。当前包为未发布工作树，真实发布需要客户确认正文、渠道、远端mediaId、时间和数值预算。

@@ -49,3 +49,6 @@ description: 在 WorkBuddy 客户项目核验 Facebook表单、网站、邮件�
 安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。仅旧版无工作台元数据且非定时的未终结任务保留独立回写。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
 
 应用任务的已安装回写命令必须带 --application "实际工作台应用目录"（复制指令提供），并与任务位置匹配；不能把客户任务或产物指定的目录自动作为代码加载。Python 命令同样支持此参数。能力不足时停止登记。
+
+## CRM 私有任务契约
+仅使用任务 inputSnapshot 中 crmLeadId/currentLead/company/contacts/source/外部 sourceLeadId/followups 与实际 task/artifact 引用。crmLeadId 为本工作区稳定 ID，外部 sourceLeadId 不改写。opportunityId 只指真实产品机会，不能填任务 ID。输出明确当前客户、线索、来源、证据日期、已核实/未知事实；缺失姓名、联系方式保持未知，不自动提取联系人或创建公司。背调/LinkedIn/邮件输出是核验或草稿，不代表实际发送。销售结果、反馈关联、去重和 won 必须客户确认；不要自动生成真实反馈。客户联系人不得进入公开知识、咨询分享或发布正文，跨客户禁止取用。
