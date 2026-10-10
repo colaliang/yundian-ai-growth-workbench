@@ -1,3 +1,4 @@
+import { hashContent, normalizeContent } from "../content/service.js";
 import crypto from 'node:crypto';
 const ident = (v) => typeof v === 'string' && /^\w[\w-]{0,127}$/.test(v);
 const date = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));
@@ -20,7 +21,14 @@ export function resultStatus(a) { const selected = a.channelIds.map(id => a.resu
     return 'partial'; if (selected.every(r => r?.status === 'failed' && !r.pending))
     return 'failed'; if (selected.some(r => r?.pending || ['processing', 'publishing'].includes(r?.status ?? '')))
     return 'publishing'; return 'unknown'; }
-export function validatePublishingRecord(v, workspaceId, family) { baseValidatePublishingRecord(v, workspaceId, family); if (family === 'publish-confirmations')
+export function validatePublishingRecord(v, workspaceId, family) { baseValidatePublishingRecord(v, workspaceId, family); if (v.approvedContent !== undefined) {
+    const n = normalizeContent(v.approvedContent);
+    if (JSON.stringify(n) !== JSON.stringify(v.approvedContent) || hashContent(n) !== v.contentHash || v.channelIds.some((id) => !n.channelIds.includes(id)))
+        throw Error('Invalid approved content snapshot');
+} if (family === 'publish-attempts' && (v.approvedContent !== undefined || v.submittedPayload !== undefined)) {
+    if (!v.approvedContent || !v.submittedPayload || JSON.stringify(v.submittedPayload) !== JSON.stringify({ content: v.approvedContent.text, channelIds: v.channelIds, mediaIds: v.approvedContent.remoteMediaIds, ...(v.mode === 'scheduled' ? { scheduledAt: v.plannedAt } : {}) }))
+        throw Error('Invalid submitted payload snapshot');
+} if (family === 'publish-confirmations')
     return v; validateRemoteResults(v.results, v.channelIds); if (v.reservedCredits !== v.maxCredits || v.postId === null && (v.results.length !== 0 || v.scheduledAt !== null) || Date.parse(v.updatedAt) < Date.parse(v.createdAt) || v.phase === 'creating' && (v.postId !== null || v.results.length !== 0) || v.phase === 'publishing' && !v.postId || ['published', 'partial', 'failed', 'scheduled'].includes(v.status) && (!v.postId || v.phase !== 'settled') || v.status === 'scheduled' && (v.mode !== 'scheduled' || v.scheduledAt !== v.plannedAt || !scheduledEvidence({ id: v.postId, status: 'scheduled', scheduledAt: v.scheduledAt, postChannels: v.results }, v.channelIds, v.plannedAt)) || ['published', 'partial', 'failed'].includes(v.status) && resultStatus(v) !== v.status)
     throw Error('Invalid publication truth or reservation'); return v; }
 export function validatePublishingDataset(rows, workspaceId) { const relevant = rows.filter(r => ['content-items', 'publish-confirmations', 'publish-attempts'].includes(r.family)), byFamily = (family) => relevant.filter(r => r.family === family); const aliases = new Set(); for (const r of relevant) {
@@ -36,7 +44,7 @@ export function validatePublishingDataset(rows, workspaceId) { const relevant = 
         throw Error('Unresolved confirmation references');
 } for (const a of attempts) {
     const c = confirmations.find(c => c.id === a.confirmationId), item = items.find(i => i.id === a.itemId);
-    if (!c || !item || !item.publishAttemptIds.includes(a.id) || ['itemId', 'workspaceId', 'contentHash', 'mode', 'plannedAt', 'maxCredits'].some(k => c[k] !== a[k]) || JSON.stringify(c.channelIds) !== JSON.stringify(a.channelIds) || a.idempotencyKey !== publicationKey(c))
+    if (!c || !item || !item.publishAttemptIds.includes(a.id) || ['itemId', 'workspaceId', 'contentHash', 'mode', 'plannedAt', 'maxCredits'].some(k => c[k] !== a[k]) || JSON.stringify(c.channelIds) !== JSON.stringify(a.channelIds) || a.idempotencyKey !== publicationKey(c) || c.approvedContent !== undefined && JSON.stringify(c.approvedContent) !== JSON.stringify(a.approvedContent))
         throw Error('Incoherent publication references');
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: quotaTimezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(a.plannedAt ?? a.createdAt));
     if (a.budgetDay !== parts)

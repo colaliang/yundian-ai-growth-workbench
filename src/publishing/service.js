@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { ContentService } from "../content/service.js";
+import { ContentService, normalizeContent } from "../content/service.js";
 import { requirePublisherBudget } from "./secrets.js";
 const queues = new Map();
 const fingerprint = (key) => crypto.createHash('sha256').update(key ?? '').digest('hex');
@@ -16,18 +16,15 @@ export class PublicationService {
     queued(fn) { const key = this.store.root.toLowerCase(), before = queues.get(key) || Promise.resolve(); const next = before.catch(() => { }).then(fn); queues.set(key, next); return next; }
     rows(family) { return this.store.files(family, '.json').map(f => validatePublishingRecord(this.store.json(f), this.content.workspaceId, family)); }
     listAttempts() { return this.rows('publish-attempts').map((a) => ({ ...a, ...(a.phase !== 'settled' ? { status: 'unknown' } : {}) })); }
-    save(a) { validatePublishingRecord(a, this.content.workspaceId, 'publish-attempts'); a.updatedAt = new Date().toISOString(); this.store.put(path.join(this.store.base, 'publish-attempts', a.id + '.json'), a); const item = this.content.get(a.itemId); if (item.contentHash === a.contentHash)
-        this.content.write({ ...item, status: a.status, publisherPostId: a.postId ?? item.publisherPostId, publishAttemptIds: [...new Set([...item.publishAttemptIds, a.id])], contentRevision: item.contentRevision + 1, updatedAt: a.updatedAt }); return a; }
+    save(a) { validatePublishingRecord(a, this.content.workspaceId, 'publish-attempts'); a.updatedAt = new Date().toISOString(); this.store.put(path.join(this.store.base, 'publish-attempts', a.id + '.json'), a); const item = this.content.get(a.itemId); this.content.write({ ...item, ...(item.contentHash === a.contentHash ? { status: a.status, publisherPostId: a.postId ?? item.publisherPostId } : {}), publishAttemptIds: [...new Set([...item.publishAttemptIds, a.id])], contentRevision: item.contentRevision + 1, updatedAt: a.updatedAt }); return a; }
     approved(itemId) { const item = this.content.get(itemId); if (item.archivedAt || item.reviewStatus !== 'approved' || item.approvedHash !== item.contentHash)
         throw Error('Content must have current approval'); return item; }
     async targets(p, ids, mediaIds) { if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length)
         throw Error('Invalid channels'); const channels = await p.listChannels(); if (ids.some(id => !channels.some(c => c.id === id && c.isActive)))
-        throw Error('Channel unavailable'); if (mediaIds.length) {
-        const media = await p.listMedia();
-        if (mediaIds.some(id => !media.some(m => m.id === id)))
-            throw Error('Media unavailable');
-    } if (ids.some(id => channels.find(c => c.id === id)?.platform.toLowerCase() === 'tiktok') && !mediaIds.length)
-        throw Error('Media required'); }
+        throw Error('Channel unavailable'); const media = await p.listMedia(); if (mediaIds.some(id => !media.some(m => m.id === id)))
+        throw Error('Media unavailable'); const selected = channels.filter(c => ids.includes(c.id)); if (selected.some(c => ['instagram', 'pinterest'].includes(c.platform.toLowerCase())) && !mediaIds.length)
+        throw Error('Media required'); if (selected.some(c => c.platform.toLowerCase() === 'tiktok') && !media.some(m => mediaIds.includes(m.id) && m.mimeType.startsWith('video/')))
+        throw Error('Actual remote video required'); }
     budget(secrets, count, day, balance) { requirePublisherBudget(secrets, count); const rows = this.listAttempts(), dayUsed = rows.filter(a => a.budgetDay === day).reduce((n, a) => n + a.reservedCredits, 0), allReserved = rows.reduce((n, a) => n + a.reservedCredits, 0); if (dayUsed + count > secrets.maxCreditsPerDay)
         throw Error('Daily credit limit exceeded'); if (allReserved + count > balance)
         throw Error('Available credit balance exceeded'); }
@@ -37,7 +34,7 @@ export class PublicationService {
         throw Error('Acknowledge existing remote scheduled attempts'); if (input.channelIds.some(id => !item.channelIds.includes(id)))
         throw Error('Channel not selected in approved content'); await this.targets(publisher, input.channelIds, item.remoteMediaIds); const { balance } = await publisher.getBalance(); if (input.mode === 'scheduled' && Date.parse(input.plannedAt) <= Date.now())
         throw Error('Invalid publishing schedule'); const fresh = this.current(); if (fresh.secrets.apiKey !== secrets.apiKey || this.approved(itemId).contentHash !== item.contentHash)
-        throw Error('Confirmation context changed'); this.budget(fresh.secrets, input.channelIds.length, this.day(input.plannedAt ?? new Date().toISOString(), quotaTimezone), balance); const c = { id: uuid(), workspaceId: this.content.workspaceId, itemId, contentHash: item.contentHash, channelIds: [...input.channelIds], mode: input.mode, plannedAt: input.plannedAt, maxCredits: input.channelIds.length, balance, expiresAt: new Date(Date.now() + 600000).toISOString(), accountFingerprint: fingerprint(secrets.apiKey), acknowledgedAttemptIds: ack }; this.store.put(path.join(this.store.base, 'publish-confirmations', c.id + '.json'), c); return c; }); }
+        throw Error('Confirmation context changed'); this.budget(fresh.secrets, input.channelIds.length, this.day(input.plannedAt ?? new Date().toISOString(), quotaTimezone), balance); const c = { id: uuid(), workspaceId: this.content.workspaceId, itemId, contentHash: item.contentHash, channelIds: [...input.channelIds], mode: input.mode, plannedAt: input.plannedAt, maxCredits: input.channelIds.length, balance, expiresAt: new Date(Date.now() + 600000).toISOString(), accountFingerprint: fingerprint(secrets.apiKey), acknowledgedAttemptIds: [...ack], approvedContent: structuredClone(normalizeContent(item)) }; this.store.put(path.join(this.store.base, 'publish-confirmations', c.id + '.json'), c); return c; }); }
     async submitPublish(itemId, confirmationId) { return this.queued(async () => { const existing = this.listAttempts().find(a => a.confirmationId === confirmationId && a.itemId === itemId); if (existing)
         return existing; const c = this.rows('publish-confirmations').find(c => c.id === confirmationId && c.itemId === itemId); if (!c || Date.parse(c.expiresAt) <= Date.now())
         throw Error('Confirmation expired or unavailable'); const item = this.approved(itemId); if (item.contentHash !== c.contentHash)
@@ -48,8 +45,8 @@ export class PublicationService {
         throw Error('Publisher configuration changed'); if (this.approved(itemId).contentHash !== c.contentHash)
         throw Error('Confirmed content changed'); if (Date.parse(c.expiresAt) <= Date.now())
         throw Error('Confirmation expired'); if (c.mode === 'scheduled' && Date.parse(c.plannedAt) <= Date.now())
-        throw Error('Invalid publishing schedule'); const day = this.day(c.plannedAt ?? new Date().toISOString(), quotaTimezone); this.budget(latest.secrets, c.maxCredits, day, balance); let a = { id: uuid(), workspaceId: this.content.workspaceId, itemId, confirmationId, contentHash: c.contentHash, channelIds: c.channelIds, mode: c.mode, plannedAt: c.plannedAt, budgetDay: day, maxCredits: c.maxCredits, reservedCredits: c.maxCredits, actualCredits: null, idempotencyKey: crypto.createHash('sha256').update(JSON.stringify([this.content.workspaceId, c.contentHash, c.channelIds.slice().sort(), c.mode, c.plannedAt, c.id])).digest('hex'), status: 'publishing', phase: 'creating', postId: null, scheduledAt: null, results: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), error: null }; this.save(a); try {
-        const post = await publisher.createPost({ content: item.text, channelIds: c.channelIds, mediaIds: item.remoteMediaIds, ...(c.mode === 'scheduled' ? { scheduledAt: c.plannedAt } : {}) });
+        throw Error('Invalid publishing schedule'); const day = this.day(c.plannedAt ?? new Date().toISOString(), quotaTimezone); this.budget(latest.secrets, c.maxCredits, day, balance); const approvedContent = structuredClone(c.approvedContent ?? normalizeContent(item)); const submittedPayload = { content: approvedContent.text, channelIds: [...c.channelIds], mediaIds: [...approvedContent.remoteMediaIds], ...(c.mode === 'scheduled' ? { scheduledAt: c.plannedAt } : {}) }; let a = { approvedContent, submittedPayload: structuredClone(submittedPayload), id: uuid(), workspaceId: this.content.workspaceId, itemId, confirmationId, contentHash: c.contentHash, channelIds: c.channelIds, mode: c.mode, plannedAt: c.plannedAt, budgetDay: day, maxCredits: c.maxCredits, reservedCredits: c.maxCredits, actualCredits: null, idempotencyKey: crypto.createHash('sha256').update(JSON.stringify([this.content.workspaceId, c.contentHash, c.channelIds.slice().sort(), c.mode, c.plannedAt, c.id])).digest('hex'), status: 'publishing', phase: 'creating', postId: null, scheduledAt: null, results: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), error: null }; this.save(a); try {
+        const post = await publisher.createPost(structuredClone(submittedPayload));
         validateRemotePost(post, c.channelIds);
         a.postId = post.id;
         a.scheduledAt = post.scheduledAt;

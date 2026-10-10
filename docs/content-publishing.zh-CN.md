@@ -11,3 +11,9 @@
 刷新回执使用工作台 POST /api/publisher/attempts/:id/refresh（带工作区 token 与 revision），后端只调用远端 get_post；这是只读核对，不重新 create_post/publish_post。错误不自动重发。刷新会更新工作区 revision。已有远端排期需逐批勾选 acknowledgement；编辑、归档及本地排期改变均不会取消远端帖子。
 
 技能生成 schemaVersion=1、workspaceId、items 的 content-plan.json，通过主技能真实回写再受控导入并解决冲突，sourceTaskId 保持真实归属。回执保留在 content-items/publish-attempts/publish-confirmations，纳入普通备份；凭据不进快照、技能、剪贴板或浏览器存储。回滚代码前备份，不删除已提交 postId/回执或未知状态记录。
+
+## 发布版本存档与媒体准备
+
+新确认记录保存完整已批准内容的 hash 输入；新提交批次在任何远端创建之前保存同一版本及实际 createPost 载荷。回执展示当时标题、正文、本地素材关联、远端素材 ID 与完整输入，后续编辑不会覆盖该历史。备份/恢复校验存档内容摘要、载荷和确认关联。旧批次没有存档时明确提示历史内容不可恢复，不用当前正文补填。处理中编辑后仍保留批次关联；后续发布检查阻止继续，不自动重发。
+
+服务器在准备和提交两阶段重新读取当前发布账号的渠道和媒体：Instagram/Pinterest 必须关联实际远端素材，TikTok 必须关联 mimeType 为 video/ 的远端视频；本地素材路径不能代替远端 ID。支持文字的渠道可无媒体。此检查不新增平台数量限制或上传能力。
