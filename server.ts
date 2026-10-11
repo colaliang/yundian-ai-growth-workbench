@@ -1,3 +1,12 @@
+import {CrmService} from './src/crm/service.ts';
+import {crmFamilies} from './src/crm/validation.ts';
+import {PublicationService} from './src/publishing/service.ts';
+import type {PublisherPort} from './src/publishing/contracts.ts';
+import {McpPublisher} from './src/publishing/mcp-client.ts';
+import {ContentService} from './src/content/service.ts';
+import {authorizeOwner,loadOwnerConfig,verifyPassword,issueOwnerSession,revokeOwnerSession} from './src/auth/owner.ts';
+import type {OwnerConfig} from './src/auth/owner.ts';
+import {loadPublisherSecrets,publisherMetadata,savePublisherSecrets} from './src/publishing/secrets.ts';
 import {createSnapshot,restoreSnapshot,setOnlineBackup} from './src/backup/service.ts';
 import {inspectUpdate} from './src/updates/check.ts';
 import {deliveryCatalog,createDeliveryProgram,deliveryProgress} from './src/domain/delivery.ts';
@@ -30,6 +39,27 @@ const id = () => crypto.randomUUID().replaceAll('-', '');
 const validId = (v: string) => /^[a-f0-9]{32}$/.test(v);
 const sha = (v: Buffer) => crypto.createHash('sha256').update(v).digest('hex');
 
+export interface RuntimeOptions { projectRoot:string; port:number; publicMode:boolean }
+const publicMode=(argv:string[],env:Record<string,string|undefined>)=>env.WORKBENCH_PUBLIC==='1'||argv.includes('--public');
+export function parseRuntimeOptions(argv:string[],env:Record<string,string|undefined>):RuntimeOptions {
+  const option=(key:string)=>{const at=argv.indexOf(key);return at<0?undefined:argv[at+1];};
+  const projectRoot=option('--root');
+  if(!projectRoot||projectRoot.startsWith('--')) throw Error('Required --root CUSTOMER_PROJECT');
+  const port=Number(argv.includes('--port')?option('--port'):env.PORT??8767);
+  if(!Number.isInteger(port)||port<1||port>65535) throw Error('Invalid port');
+  return {projectRoot,port,publicMode:publicMode(argv,env)};
+}
+function knowledgeCheck(store:FileWorkspace) {
+  try {
+    const manifest=JSON.parse(fs.readFileSync(path.join(APP,'.sync-manifest.json'),'utf8'));
+    const names=Object.keys(manifest).filter(file=>file.endsWith('.md'));
+    const kbDir=path.join(store.base,'knowledge');
+    const drifted=names.filter(file=>{const target=path.join(kbDir,file);return !fs.existsSync(target)||crypto.createHash('sha1').update(fs.readFileSync(target)).digest('hex')!==manifest[file];});
+    const present=fs.existsSync(kbDir)?fs.readdirSync(kbDir).filter(file=>file.endsWith('.md')).length:0;
+    return {status:drifted.length?'drift':'ok',total:names.length,present,drifted,at:manifest.__at||null};
+  } catch {return {status:'no-baseline',total:0,present:0,drifted:[],at:null};}
+}
+
 // 云服务公开配置：优先环境变量，其次应用根目录 cloud-config.json；未配置返回 null，前端自动降级为无云服务模式。
 const loadCloudConfig = (): { endpoint: string; publishableKey: string } | null => {
   const fromEnv = (() => {
@@ -58,7 +88,7 @@ export class FileWorkspace extends WorkspaceStore {
       fs.mkdirSync(path.dirname(file),{recursive:true});
       try { fs.writeFileSync(file,value,{flag:'wx'}); } catch(e:any) { if(e.code!=='EEXIST') throw e; }
     }
-    for(const name of ['tasks','artifacts','workflows','feedback','records','audits']) fs.mkdirSync(this.checked(path.join(this.base,name)),{recursive:true});
+    for(const name of ['tasks','artifacts','workflows','feedback','records','audits',...crmFamilies]) fs.mkdirSync(this.checked(path.join(this.base,name)),{recursive:true});
   }
   registry(): Data { return JSON.parse(fs.readFileSync(path.join(APP,'skills/registry.json'),'utf8')); }
   skills(): Data {
@@ -82,7 +112,7 @@ export class FileWorkspace extends WorkspaceStore {
     for(const [src,dst] of pairs) if(!fs.existsSync(dst)) this.write(dst,fs.readFileSync(src,'utf8'));
   }
   digest(): string {
-    const files=[path.join(this.base,'workbench.json'),...this.files('tasks','.json'),...this.files('artifacts','.md'),...this.files('artifacts','.json'),...this.files('reviews','.json'),...this.files('receipts','.json'),...this.files('knowledge-confirmations','.json'),...this.files('knowledge','.md'),...this.files('records','.json'),...this.files('audits','.json'),...this.files('daily-decisions','.json'),...this.files('schedules','.json'),...this.files('schedule-occurrences','.json'),...this.files('delivery-programs','.json')].sort();
+    const files=[path.join(this.base,'workbench.json'),...this.files('tasks','.json'),...this.files('artifacts','.md'),...this.files('artifacts','.json'),...this.files('reviews','.json'),...this.files('receipts','.json'),...this.files('knowledge-confirmations','.json'),...this.files('knowledge','.md'),...this.files('records','.json'),...this.files('audits','.json'),...this.files('daily-decisions','.json'),...this.files('schedules','.json'),...this.files('schedule-occurrences','.json'),...this.files('delivery-programs','.json'),...this.files('content-items','.json'),...this.files('publish-attempts','.json'),...this.files('publish-confirmations','.json'),...crmFamilies.flatMap(f=>this.files(f,'.json'))].sort();
     const h=crypto.createHash('sha256');
     for(const file of files) if(fs.existsSync(this.checked(file))) h.update(path.relative(this.base,file)).update(fs.readFileSync(file));
     for(const f of this.files('artifacts','.json')){const a=this.json(f);if(a.path){try{h.update(a.path).update(fs.readFileSync(this.checked(path.resolve(this.root,a.path))));}catch{h.update('missing:'+a.path);}}}
@@ -105,6 +135,7 @@ export class FileWorkspace extends WorkspaceStore {
     state.reviews=this.files('reviews','.json').map(f=>this.json(f)).map(r=>({...r,valid:state.artifacts.some((a:Data)=>a.id===r.artifactId&&a.contentHash===r.contentHash&&a.contentHash!==null)}));
     for(const t of state.tasks){if(t.reviewedHash&&!state.reviews.some((r:Data)=>r.taskId===t.id)){const a=state.artifacts.find((a:Data)=>a.taskId===t.id&&a.id===t.id);if(a)state.reviews.push({id:'legacy-'+t.id,workspaceId:state.workspace.workspaceId,taskId:t.id,artifactId:a.id,contentHash:t.reviewedHash,reviewedAt:t.finishedAt||'',evidence:t.review||'历史验收',decision:'accepted',valid:a.contentHash===t.reviewedHash});}}
     for(const t of state.tasks){const artifacts=state.artifacts.filter((a:Data)=>a.taskId===t.id);if(artifacts.length){t.artifactIds=artifacts.map((a:Data)=>a.id);const all=artifacts.every((a:Data)=>a.contentHash&&(()=>{const latest=state.reviews.filter((r:Data)=>r.artifactId===a.id).sort((x:Data,y:Data)=>(x.sequence||0)-(y.sequence||0)||String(x.reviewedAt).localeCompare(String(y.reviewedAt))).at(-1);return latest?.valid&&latest.decision==='accepted';})());t.status=all&&['completed','needs-review'].includes(t.status)?'completed':(t.status==='completed'||t.status==='needs-review')?'needs-review':t.status;}}
+    const crm=new CrmService(this);state.crm={companies:crm.listCompanies({includeArchived:true}),contacts:crm.listContacts({includeArchived:true}),leads:crm.listLeads({includeArchived:true}),followups:crm.listFollowUps({includeArchived:true}),feedbackLinks:crm.list('crm-feedback-links',{})};
     state.serviceCatalog=deliveryCatalog();
     state.deliveryPrograms=this.files('delivery-programs','.json').map(f=>this.json(f)).filter(p=>p.workspaceId===state.workspace.workspaceId).map(p=>{const progress=deliveryProgress(p as any,state.tasks,state.artifacts,state.reviews);return {...p,artifactIds:progress.artifactIds,progress};});
     const confirmations=this.files('knowledge-confirmations','.json').map(f=>this.json(f));
@@ -128,7 +159,7 @@ export class FileWorkspace extends WorkspaceStore {
     state.settings=state.settings??{}; state.version=VERSION; state.skills=this.skills(); state.dailyActions=recommendDaily(dailyContext(state),new Date().toISOString()); state.revision=this.digest(); return state;
   }
   checkRevision(revision:string){if(revision!==this.digest())throw Error('资料已被其他操作更新，请刷新后重试');}
-  createTask(input:Data,revision:string):Data{const before=this.load().tasks.map((t:Data)=>t.id);const state=this.save({action:'task',payload:input,revision});return state.tasks.find((t:Data)=>!before.includes(t.id));}
+  createTask(input:Data,revision:string):Data{if(input.sourceLeadId!==undefined){const context=new CrmService(this).crmLeadContext(input.sourceLeadId);if(context.lead.archivedAt)throw Error('CRM lead archived');if(!['buyer-check','acquisition','email-outreach','sales-feedback'].includes(input.stage))throw Error('CRM context is private to customer acquisition tasks');input={...input,inputs:JSON.stringify({crmLeadId:context.lead.id,sourceLeadId:context.lead.sourceLeadId,source:context.lead.source,currentLead:context.lead,company:context.company,contacts:context.contacts,followups:context.followups,artifactIds:context.artifactIds}),instructions:(input.instructions||'')+'\n仅当前客户私有任务取用 CRM 实际记录；不得自动发送、提取虚构联系人、标记成交或共享至咨询/发布/知识库。'};}const before=this.load().tasks.map((t:Data)=>t.id);const state=this.save({action:'task',payload:input,revision});return state.tasks.find((t:Data)=>!before.includes(t.id));}
   task(taskId:string):Data{if(!validId(taskId))throw Error('Invalid task');const file=path.join(this.base,'tasks',taskId+'.json');if(!fs.existsSync(file))throw Error('任务不存在');const task=this.json(file);if(task.id!==taskId)throw Error('任务文件编号不匹配');if(task.workspaceId&&task.workspaceId!==this.json(path.join(this.base,'workspace.json')).workspaceId)throw Error('任务客户不匹配');return task;}
   registerManual(task:Data,file:string):Data{
     const artifactId=task.id;const artifact={id:artifactId,workspaceId:this.load().workspace.workspaceId,taskId:task.id,module:task.stage,skillVersion:task.skillVersion||'legacy',inputSnapshotRef:task.inputSnapshotRef||'',executedAt:null,path:path.relative(this.root,file),summary:task.name,sources:[],gaps:['手动保存，执行来源未核验'],nextSteps:[],verification:'unverified',contentHash:contentHash(fs.readFileSync(file)),executor:'manual'};
@@ -229,7 +260,7 @@ export class FileWorkspace extends WorkspaceStore {
       if(action==='daily-create'){
         if(suggestion.taskId||suggestion.stage==='knowledge')throw Error('请使用现有任务或补充企业资料');
         const skill=current.skills[suggestion.stage];
-        const task=this.createTask({name:suggestion.name,stage:suggestion.stage,inputs:suggestion.inputs,instructions:skill.instructions,acceptance:skill.acceptance,cycleId:suggestion.id.startsWith('feedback:')?JSON.parse(suggestion.inputs).cycleId||'cycle-1':'cycle-1'},current.revision);
+        const task=this.createTask({name:suggestion.name,stage:suggestion.stage,inputs:suggestion.inputs,...(suggestion.id.startsWith('crm-followup:')?{sourceLeadId:JSON.parse(suggestion.inputs).lead.id}:{}),instructions:skill.instructions,acceptance:skill.acceptance,cycleId:suggestion.id.startsWith('feedback:')?JSON.parse(suggestion.inputs).cycleId||'cycle-1':'cycle-1'},current.revision);
         decision={...decision,status:'created',taskId:task.id};
       }
       this.put(path.join(this.base,'daily-decisions',sha(Buffer.from(suggestion.id))+'.json'),decision);return this.load();
@@ -290,6 +321,8 @@ export class FileWorkspace extends WorkspaceStore {
       if(!text('title').trim()||!text('content').trim()||!text('source').trim()) throw Error('请填写资料标题、实际内容和来源');
       this.write(path.join(this.base,'knowledge',id()+'.md'),'# '+text('title').trim()+'\n\n'+text('content',900000).trim()+'\n\n来源：'+text('source').trim()+'\n日期：'+now+'\n审核状态：待确认\n');
     } else if(action==='task') {
+      if(p.sourceLeadId!==undefined){const context=new CrmService(this).crmLeadContext(p.sourceLeadId);if(context.lead.archivedAt||context.company.archivedAt)throw Error('CRM source is archived');if(!['buyer-check','acquisition','email-outreach','sales-feedback'].includes(p.stage))throw Error('CRM context must remain in private acquisition tasks');p.inputs=JSON.stringify({crmLeadId:context.lead.id,sourceLeadId:context.lead.sourceLeadId,source:context.lead.source,currentLead:context.lead,company:context.company,contacts:context.contacts,followups:context.followups,artifactIds:context.artifactIds});}
+
       if(!state.profile.company) throw Error('请先创建企业知识库');
       if(!SUPPORTED_STAGES.includes(p.stage)||!text('name').trim()) throw Error('任务名称或阶段无效');
       const key=p.stage==='site-and-content'&&(p.skillId==='yundian-growth-seo-geo'||/SEO|GEO|AEO/.test(text('name').toUpperCase()))?'seo-geo':p.stage;
@@ -313,10 +346,17 @@ export class FileWorkspace extends WorkspaceStore {
   }
 }
 
-export function createServer(store: FileWorkspace,port: number) {
+export interface ServerOptions {publicMode?:boolean;ownerConfig?:OwnerConfig;appRoot?:string;trustProxy?:boolean;publisherFetch?:typeof fetch;publisherPort?:PublisherPort}
+export function createServer(store: FileWorkspace,port: number,options:ServerOptions={}) {
   const token=crypto.randomBytes(32).toString('base64url');
-  const isPublic=process.env.WORKBENCH_PUBLIC==='1';
+  const isPublic=options.publicMode??publicMode(process.argv.slice(2),process.env);
+  const secretRoot=options.appRoot??APP;
+  const owner=options.ownerConfig??loadOwnerConfig(secretRoot,isPublic);
+  if(owner.publicMode!==isPublic)throw Error('Owner configuration mode mismatch');
   const cloudConfig=loadCloudConfig();
+  const content=new ContentService(store);
+  const crm=new CrmService(store);
+  const publication=new PublicationService(store,()=>{const secrets=loadPublisherSecrets(secretRoot);if(!secrets.apiKey)throw Error('Publisher unavailable');return {secrets,publisher:options.publisherPort??new McpPublisher(secrets.apiKey,options.publisherFetch)};});
   return http.createServer(async(req,res)=>{
     const respond=(value:any,status=200,mime='application/json; charset=utf-8')=>{
       const data=Buffer.isBuffer(value)?value:Buffer.from(JSON.stringify(value));
@@ -325,6 +365,26 @@ export function createServer(store: FileWorkspace,port: number) {
     if(!isPublic&&!['127.0.0.1:'+port,'localhost:'+port].includes(req.headers.host??'')) return respond({error:'Invalid host'},403);
     const pathname=(req.url??'/').split('?')[0];
     try {
+      const origin=req.headers.origin;
+      const protocol=(req.socket as any).encrypted||(options.trustProxy&&req.headers['x-forwarded-proto']==='https')?'https':'http';
+      if(origin&&origin!==protocol+'://'+req.headers.host) return respond({error:'Invalid origin'},403);
+      if(pathname==='/healthz'&&req.method==='GET')return respond({ok:true});
+      if(pathname==='/api/auth/status'&&req.method==='GET')return respond({...authorizeOwner(req,owner),publicMode:isPublic});
+      if(pathname==='/api/auth/login'&&req.method==='POST'){
+        if(!owner.passwordHash)return respond({error:'Configure owner with local CLI',setupRequired:true},401);
+        const chunks:Buffer[]=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>4096)return respond({error:'Request too large'},413);chunks.push(chunk);}
+        const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if(!verifyPassword(body.password,owner.passwordHash))return respond({error:'Invalid owner password',loginRequired:true},401);
+        const session=issueOwnerSession(owner);res.setHeader('Set-Cookie','wb_owner='+session+'; HttpOnly; SameSite=Strict; Path=/; Max-Age='+owner.sessionTtlSeconds+(protocol==='https'?'; Secure':''));
+        return respond({allowed:true});
+      }
+      const auth=authorizeOwner(req,owner);
+      const shell=['/','/index.html','/styles-v03.css','/web/main.js','/web/auth-bootstrap.js','/web/modules.js','/web/views/login.js'];
+      if(!auth.allowed&&!shell.includes(pathname))return respond({...auth,error:auth.setupRequired?'Owner setup required':'Owner login required'},401);
+      if(pathname==='/api/auth/logout'&&req.method==='POST'){
+        if(req.headers['x-workspace-token']!==token)return respond({error:'Invalid workspace token'},403);
+        revokeOwnerSession(req,owner);res.setHeader('Set-Cookie','wb_owner=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+(protocol==='https'?'; Secure':''));return respond({ok:true});
+      }
       if(req.method==='GET') {
         if(pathname==='/healthz') return respond({ok:true});
         if(pathname==='/api/update/inspect') return respond(inspectUpdate(store.root));
@@ -336,38 +396,46 @@ export function createServer(store: FileWorkspace,port: number) {
             return respond(releaseInfo(await response.json()));
           } catch { return respond({error:'版本检查失败，请稍后重试或在WorkBuddy检查仓库版本'},502); }
         }
-        if(pathname==='/api/state') return respond({...store.load(),token,projectRoot:store.root,cloud:cloudConfig});
+        if(/^\/api\/crm\/leads\/[a-f0-9]{32}\/context$/.test(pathname))return respond({context:crm.crmLeadContext(pathname.split('/')[4]),revision:store.load().revision});
+        if(pathname.startsWith('/api/crm/')){const match=/^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32}))?$/.exec(pathname);if(!match)return respond({error:'Not found'},404);const family='crm-'+match[1],filters=Object.fromEntries(new URL(req.url!,'http://localhost').searchParams);return respond({items:match[2]?[crm.get(family,match[2])]:crm.list(family,filters),revision:store.load().revision});}
+        if(pathname==='/api/content/items'){const params=new URL(req.url!,'http://localhost').searchParams;return respond({items:content.list(Object.fromEntries(params)),revision:store.load().revision});}
+        if(pathname==='/api/publisher/attempts')return respond({attempts:publication.listAttempts(),revision:store.load().revision});
+        if(pathname==='/api/content/export')return respond(content.exportPlan());
+        if(['/api/publisher/connect','/api/publisher/channels','/api/publisher/media','/api/publisher/balance'].includes(pathname)){const key=loadPublisherSecrets(secretRoot).apiKey;if(!key)return respond({connected:false,checkedAt:new Date().toISOString(),capabilities:[],error:'发布服务未配置'},409);const publisher=new McpPublisher(key,options.publisherFetch);if(pathname.endsWith('/connect'))return respond(await publisher.connect());if(pathname.endsWith('/channels'))return respond({channels:await publisher.listChannels()});if(pathname.endsWith('/media'))return respond({media:await publisher.listMedia()});return respond(await publisher.getBalance());}
+        if(pathname==='/api/publisher/config')return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
+        if(pathname==='/api/state') return respond({...store.load(),token,projectRoot:store.root,cloud:isPublic?null:cloudConfig,publisher:publisherMetadata(loadPublisherSecrets(secretRoot)),kbCheck:knowledgeCheck(store)});
         if(pathname.startsWith('/api/artifacts/')){const parts=pathname.split('/'),a=store.artifact(parts[3]);if(parts[4]==='file'){if(!a.path||!a.contentHash)return respond({error:'实际文件无法读取'},404);const file=store.checked(path.resolve(store.root,a.path));return respond(fs.readFileSync(file),200,'application/octet-stream');}return respond(a);}
         if(pathname.startsWith('/api/artifact/')) {
           const name=pathname.split('/').pop()!; if(!/^[a-f0-9]{32}\.md$/.test(name)) return respond({error:'Invalid artifact'},400);
           const file=store.checked(path.join(store.base,'artifacts',name));
           return fs.existsSync(file)?respond(fs.readFileSync(file),200,'text/plain; charset=utf-8'):respond({error:'Not found'},404);
         }
-        const files:Data={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app-v03.js':['app-v03.js','text/javascript'],'/styles-v03.css':['styles-v03.css','text/css'],'/brand.jpg':['brand.jpg','image/jpeg'], ...Object.fromEntries(['main.js','api.js','safe-url.js','views/workbench.js','views/settings.js','views/skills.js','views/knowledge.js','views/results.js','views/daily-actions.js','views/schedules.js','views/services.js','views/backup.js'].map(file=>['/web/'+file,['web/'+file,'text/javascript']]))};
+        const files:Data={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app-v03.js':['app-v03.js','text/javascript'],'/styles-v03.css':['styles-v03.css','text/css'],'/brand.jpg':['brand.jpg','image/jpeg'], ...Object.fromEntries(['auth-bootstrap.js','views/login.js','views/content-plan.js','views/crm.js','modules.js','main.js','api.js','safe-url.js','views/workbench.js','views/settings.js','views/skills.js','views/knowledge.js','views/results.js','views/daily-actions.js','views/schedules.js','views/services.js','views/backup.js'].map(file=>['/web/'+file,['web/'+file,'text/javascript']]))};
         if(!files[pathname]) return respond({error:'Not found'},404);
         return respond(fs.readFileSync(path.join(APP,files[pathname][0])),200,files[pathname][1]);
       }
-      if(req.method!=='POST'||!(pathname==='/api/backup/restore'||pathname==='/api/backup/online'||pathname==='/api/save'||pathname==='/api/tasks'||/^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname)||pathname==='/api/knowledge/confirm')) return respond({error:'Not found'},404);
+      if(!(req.method==='POST'||req.method==='PATCH'&&pathname.startsWith('/api/crm/'))||!(pathname.startsWith('/api/crm/')||pathname.startsWith('/api/content/')||pathname==='/api/publisher/config'||/^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname)||pathname==='/api/backup/restore'||pathname==='/api/backup/online'||pathname==='/api/save'||pathname==='/api/tasks'||/^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname)||pathname==='/api/knowledge/confirm')) return respond({error:'Not found'},404);
       if(req.headers['x-workspace-token']!==token) return respond({error:'授权校验失败，请刷新工作台'},403);
       if(!isPublic&&req.headers.origin&&!['http://127.0.0.1:'+port,'http://localhost:'+port].includes(req.headers.origin)) return respond({error:'Invalid origin'},403);
       const chunks:Buffer[]=[]; let size=0;
       for await(const chunk of req) { size+=chunk.length; if(size>(pathname==='/api/backup/restore'?64000000:1000000)) return respond({error:'请求过大'},413); chunks.push(chunk); }
       // Synchronous mutations serialize revision checks and writes within this process.
       const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if(pathname.startsWith('/api/crm/')){store.checkRevision(body.revision);if(body.workspaceId!==crm.workspaceId)throw Error('CRM workspace mismatch');let result;const match=/^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32})(?:\/(archive))?)?$/.exec(pathname);if(req.method==='POST'&&pathname==='/api/crm/feedback-links'){if(body.confirmed!==true)throw Error('Customer confirmation required');result=crm.linkFeedback(body.feedbackId,body.crmLeadId);}else if(req.method==='POST'&&pathname==='/api/crm/import/preview')result=crm.previewImport(body.rows);else if(req.method==='POST'&&pathname==='/api/crm/import/confirm')result=crm.confirmImport(body.previewId,body.decisions);else if(match){const [,kind,entityId,archive]=match;if(archive&&req.method==='POST'&&kind!=='followups')result=crm.archiveEntity(kind==='companies'?'company':kind==='contacts'?'contact':'lead',entityId);else if(entityId&&req.method==='PATCH'&&!archive&&kind!=='followups')result=kind==='companies'?crm.updateCompany(entityId,body.input):kind==='contacts'?crm.updateContact(entityId,body.input):crm.updateLead(entityId,body.input);else if(!entityId&&req.method==='POST')result=kind==='companies'?crm.createCompany(body.input):kind==='contacts'?crm.createContact(body.input):kind==='leads'?crm.createLead(body.input):crm.recordFollowUp(body.input);else return respond({error:'Not found'},404);}else return respond({error:'Not found'},404);return respond({result,crm:store.load().crm,revision:store.load().revision});}
+      const publishing=/^\/api\/content\/items\/([\w-]+)\/(prepare-publish|publish)$/.exec(pathname),refresh=/^\/api\/publisher\/attempts\/([\w-]+)\/refresh$/.exec(pathname);
+      if(publishing||refresh){store.checkRevision(body.revision);const result=refresh?await publication.refreshAttempt(refresh[1]):publishing![2]==='prepare-publish'?await publication.preparePublish(publishing![1],body.input):await publication.submitPublish(publishing![1],body.confirmationId);return respond({result,items:content.list({}),attempts:publication.listAttempts(),revision:store.load().revision});}
+      if(pathname.startsWith('/api/content/')){store.checkRevision(body.revision);let result;const match=/^\/api\/content\/items\/([\w-]+)(?:\/(approve|archive))?$/.exec(pathname);if(pathname==='/api/content/items')result=content.create(body.input);else if(pathname==='/api/content/import/preview')result=content.previewImport(body.raw,body.format);else if(pathname==='/api/content/import/confirm')result=content.confirmImport(body.previewId,body.decisions);else if(match)result=match[2]==='approve'?content.approve(match[1],body.contentHash):match[2]==='archive'?content.archive(match[1],body.expectedRevision):content.update(match[1],body.input,body.expectedRevision);else return respond({error:'Not found'},404);return respond({result,items:content.list({}),revision:store.load().revision});}
+      if(pathname==='/api/publisher/config'){if(body.revision!==store.load().revision)throw Error('Workspace changed');const existing=loadPublisherSecrets(secretRoot);savePublisherSecrets(secretRoot,{...body.config,apiKey:body.config?.apiKey===undefined?existing.apiKey:body.config.apiKey},auth);return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));}
       if(pathname.startsWith('/api/backup/')){if(body.revision!==store.load().revision)throw Error('项目已变化，请刷新后再恢复');if(pathname==='/api/backup/online')return respond(await setOnlineBackup(store.root,body.enabled===true));return respond(restoreSnapshot(store.root,body.snapshot));}
       if(pathname==='/api/tasks')return respond({task:store.createTask(body.payload??body.input,body.revision),...store.load()});
       if(pathname==='/api/knowledge/confirm'){store.confirmKnowledge(body.path,body.contentHash,body.revision);return respond(store.load());}
       const match=/^\/api\/tasks\/([a-f0-9]{32})\/(receipts|reviews)$/.exec(pathname);
       if(match){if(match[2]==='receipts')store.applyReceipt(match[1],body.receipt??body.payload,body.revision);else store.reviewArtifact(match[1],body.contentHash,body.decision,body.evidence,body.revision,body.artifactId);return respond(store.load());}
       return respond(store.save(body));
-    } catch(e:any) { return respond({error:e.code?'文件操作失败，请检查项目目录':e.message},e.code?500:400); }
+    } catch(e:any) { return respond({error:e.code?'文件操作失败，请检查项目目录':pathname.startsWith('/api/publisher/')||pathname.startsWith('/api/auth/')?'Private configuration request failed':e.message},e.code?500:400); }
   });
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
-  const args=process.argv.slice(2),option=(key:string)=>args[args.indexOf(key)+1];
-  if(!args.includes('--root')) throw Error('Required --root CUSTOMER_PROJECT');
-  const isPublic=process.env.WORKBENCH_PUBLIC==='1';
-  const port=Number(args.includes('--port')?option('--port'):process.env.PORT??8767);
-  if(!Number.isInteger(port)||port<1||port>65535) throw Error('Invalid port');
-  createServer(new FileWorkspace(option('--root')),port).listen(port,isPublic?'0.0.0.0':'127.0.0.1',()=>console.log('WorkBuddy workbench: http://127.0.0.1:'+port+(isPublic?' (public bind)':'')));
+  const {projectRoot,port,publicMode:isPublic}=parseRuntimeOptions(process.argv.slice(2),process.env);
+  createServer(new FileWorkspace(projectRoot),port,{publicMode:isPublic,trustProxy:process.env.WORKBENCH_TRUST_PROXY==='1'}).listen(port,isPublic?'0.0.0.0':'127.0.0.1',()=>console.log('WorkBuddy workbench: http://127.0.0.1:'+port+(isPublic?' (public bind)':'')));
 }

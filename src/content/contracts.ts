@@ -1,0 +1,6 @@
+export type ContentStatus='idea'|'draft'|'ready'|'scheduled'|'publishing'|'published'|'partial'|'failed'|'unknown';
+export interface ContentInput {title:string;productRef?:string;purpose?:string;contentType?:string;language?:string;keywords?:string[];text?:string;assetRefs?:string[];remoteMediaIds?:string[];channelIds?:string[];plannedAt?:string|null;timezone?:string;cycleId?:string;sourceTaskId?:string|null}
+export interface ContentItem extends Required<ContentInput>{id:string;workspaceId:string;contentRevision:number;reviewStatus:'pending'|'approved'|'rejected';approvedHash:string|null;contentHash:string;status:ContentStatus;publisherPostId:string|null;publishAttemptIds:string[];createdAt:string;updatedAt:string;archivedAt:string|null}
+export interface ContentFilter {productRef?:string;status?:ContentStatus;channelId?:string;from?:string;to?:string;includeArchived?:boolean}
+export interface ImportPreview {id:string;workspaceId:string;candidates:{candidateId:string;input:ContentInput;existingId?:string;expectedRevision?:number}[];errors:{row:number;message:string}[];conflicts:{candidateId:string;existingId:string;local:ContentItem;incoming:ContentInput}[]}
+export interface ImportDecision {candidateId:string;action:'create'|'keep-local'|'apply-new';expectedRevision?:number}

@@ -1,8 +1,9 @@
+import { moduleForStage } from "../navigation/modules.js";
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 const config = (name) => JSON.parse(fs.readFileSync(new URL('../../config/' + name + '.json', import.meta.url), 'utf8'));
 export function deliveryCatalog() { return { experts: config('experts'), services: config('services'), templates: config('delivery-programs') }; }
-export function getModuleServices(moduleId) { const c = deliveryCatalog(); return c.services.filter(s => s.modules.includes(moduleId)).flatMap(s => { const expert = c.experts.find(e => e.id === s.expertId && e.contact?.trim() && e.modules.includes(moduleId)); return expert ? [{ ...s, expert }] : []; }); }
+export function getModuleServices(moduleId) { moduleId = moduleForStage(moduleId) || moduleId; const c = deliveryCatalog(); return c.services.filter(s => s.modules.includes(moduleId)).flatMap(s => { const expert = c.experts.find(e => e.id === s.expertId && e.contact?.trim() && e.modules.includes(moduleId)); return expert ? [{ ...s, expert }] : []; }); }
 export function createDeliveryProgram(templateId, workspaceId) { const t = deliveryCatalog().templates.find(t => t.id === templateId); if (!t || !workspaceId)
     throw Error('陪跑模板或客户无效'); return { id: crypto.randomUUID().replaceAll('-', ''), workspaceId, templateId, title: t.title, goals: [...t.goals], stages: t.stages.map((s) => s.moduleId), taskTemplates: t.stages.map((s) => ({ ...s })), taskIds: [], artifactIds: [], createdAt: new Date().toISOString() }; }
 export function deliveryProgress(program, tasks, artifacts, reviews) { const scoped = tasks.filter(t => t.workspaceId === program.workspaceId && program.taskIds.includes(t.id)); let completed = 0; const artifactIds = []; const reviewIds = []; for (const t of scoped) {

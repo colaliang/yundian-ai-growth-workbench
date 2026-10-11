@@ -1,3 +1,8 @@
+import { crmFamilies, validateCrmRecord, validateCrmDataset } from "../crm/validation.js";
+import { validatePublicationPath } from "../storage/publication-path.js";
+import { validatePublishingDataset } from "../publishing/validation.js";
+import { validatePublishingRecord } from "../publishing/service.js";
+import { validateContentRecord } from "../content/service.js";
 import { safeArtifactUrl } from "../domain/artifacts.js";
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +12,7 @@ const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 function workspace(store) { const w = store.json(path.join(store.base, 'workspace.json')); if (w.schemaVersion !== 3 || w.contractVersion !== 2 || typeof w.workspaceId !== 'string' || !w.workspaceId)
     throw Error('Unsupported workspace schema'); return w; }
 function safe(store, relative) { if (typeof relative !== 'string' || !relative || relative.includes('\\') || relative.includes(':') || relative.split('/').some(x => !x || x === '.' || x === '..' || /[. ]$/.test(x) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(x)) || !relative.startsWith('growth-workspace/'))
-    throw Error('Invalid snapshot path'); const result = path.join(store.root, relative); let cursor = store.root; for (const part of relative.split('/')) {
+    throw Error('Invalid snapshot path'); validatePublicationPath(relative); const result = path.join(store.root, relative); let cursor = store.root; for (const part of relative.split('/')) {
     cursor = path.join(cursor, part);
     const stat = fs.lstatSync(cursor, { throwIfNoEntry: false });
     if (stat?.isSymbolicLink())
@@ -44,6 +49,18 @@ function structured(value, family, workspaceId, legacy = false) {
     const unscoped = ['workbench', 'records', 'feedback', 'audits'];
     if (!unscoped.includes(family) && !Object.hasOwn(value, 'workspaceId') && !legacy)
         throw Error('Missing workspaceId in ' + family);
+    if (['publish-attempts', 'publish-confirmations'].includes(family)) {
+        validatePublishingRecord(value, workspaceId, family);
+        return;
+    }
+    if (crmFamilies.includes(family)) {
+        validateCrmRecord(value, workspaceId, family);
+        return;
+    }
+    if (family === 'content-items') {
+        validateContentRecord(value, workspaceId);
+        return;
+    }
     if (family === 'workbench') {
         if (!object(value.profile))
             throw Error('Invalid workbench profile');
@@ -160,7 +177,7 @@ function validated(root, snapshot) {
         const canonical = row.relative.toLowerCase();
         if (rows.some(other => other !== row && other.relative.toLowerCase().startsWith(canonical + '/')))
             throw Error('Conflicting snapshot file paths');
-        const match = /^growth-workspace\/(workbench\.json|(?:tasks|receipts|reviews|records|feedback|schedules|artifacts|workflows|audits|knowledge-confirmations|daily-decisions|schedule-occurrences|delivery-programs)\/[^/]+\.json)$/.exec(canonical);
+        const match = /^growth-workspace\/(workbench\.json|(?:tasks|receipts|reviews|records|feedback|schedules|artifacts|workflows|audits|knowledge-confirmations|daily-decisions|schedule-occurrences|delivery-programs|content-items|publish-attempts|publish-confirmations|crm-companies|crm-contacts|crm-leads|crm-followups|crm-feedback-links)\/[^/]+\.json)$/.exec(canonical);
         if (!match)
             continue;
         const family = canonical === 'growth-workspace/workbench.json' ? 'workbench' : canonical.split('/')[1];
@@ -178,6 +195,39 @@ function validated(root, snapshot) {
         });
         structured(JSON.parse(row.bytes.toString('utf8').replace(/^\uFEFF/, '')), family, w.workspaceId, legacy);
     }
+    const local = new Map();
+    for (const family of ['content-items', 'publish-confirmations', 'publish-attempts'])
+        for (const file of store.files(family, '.json'))
+            local.set(path.relative(store.root, file).split(path.sep).join('/'), { family, filename: path.basename(file), value: store.json(file) });
+    const incoming = new Map(local), effective = new Map(local);
+    for (const row of rows) {
+        const family = row.relative.split('/')[1];
+        if (['content-items', 'publish-confirmations', 'publish-attempts'].includes(family) && row.relative.split('/').length === 3) {
+            const v = { family, filename: path.basename(row.file), value: JSON.parse(row.bytes.toString('utf8')) };
+            incoming.set(row.relative, v);
+            if (!local.has(row.relative))
+                effective.set(row.relative, v);
+        }
+    }
+    validatePublishingDataset([...incoming.values()], w.workspaceId);
+    validatePublishingDataset([...effective.values()], w.workspaceId);
+    const related = [...crmFamilies, 'tasks', 'artifacts', 'feedback', 'records'];
+    const crmLocal = new Map();
+    for (const family of related)
+        for (const file of store.files(family, '.json'))
+            crmLocal.set(path.relative(store.root, file).split(path.sep).join('/'), { family, filename: path.basename(file), value: store.json(file) });
+    const crmIncoming = new Map(crmLocal), crmEffective = new Map(crmLocal);
+    for (const row of rows) {
+        const family = row.relative.split('/')[1];
+        if (related.includes(family) && row.relative.split('/').length === 3 && row.relative.endsWith('.json')) {
+            const record = { family, filename: path.basename(row.file), value: JSON.parse(row.bytes.toString('utf8')) };
+            crmIncoming.set(row.relative, record);
+            if (!crmLocal.has(row.relative))
+                crmEffective.set(row.relative, record);
+        }
+    }
+    validateCrmDataset([...crmIncoming.values()], w.workspaceId);
+    validateCrmDataset([...crmEffective.values()], w.workspaceId);
     for (const row of rows) {
         let cursor = path.dirname(row.file);
         while (cursor !== store.root) {

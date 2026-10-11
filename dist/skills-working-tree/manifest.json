@@ -30,8 +30,8 @@
       "files": [
         {
           "path": "yundian-growth-acquisition/SKILL.md",
-          "sha256": "be920384e0606faa72281a810598fcc108aaacb4e78116c71a6d2ec24cf28f47",
-          "size": 4145
+          "sha256": "308c1b138f510e982ea85dc25de08eec4ba47737056831f48864d919f8c3f4de",
+          "size": 4883
         }
       ]
     },
@@ -57,8 +57,8 @@
         },
         {
           "path": "yundian-growth-buyer-check/SKILL.md",
-          "sha256": "207b6fbe024ae7949ed1c4f347d1224d5def1141bfb6e0eceb11aa33f5ffa716",
-          "size": 5376
+          "sha256": "07f4345d6a767100f9dcb205e84cca6f8d2acbb6ffe62f3c40fa91b72407e7a1",
+          "size": 6114
         }
       ]
     },
@@ -69,8 +69,8 @@
       "files": [
         {
           "path": "yundian-growth-content-operations/SKILL.md",
-          "sha256": "4eeb4d977d473056b47b16d88796ec649e7eaa622fd2489ef3711a1371cbb9e1",
-          "size": 3082
+          "sha256": "122f22ebf753cd73e0ca3ad465a71a9a3f1e48c13d5dbd1d44121d21b4b5cf9d",
+          "size": 4525
         }
       ]
     },
@@ -81,8 +81,8 @@
       "files": [
         {
           "path": "yundian-growth-email-outreach/SKILL.md",
-          "sha256": "fbb0eb1cc5b69a786d9b4eb431c1d68cf7b3b0cf8375a262bf297b5df7f24934",
-          "size": 2846
+          "sha256": "26a3e2b7c75a84cf8fab6998454f985f1cfca39bd920ff32f5d65d4448dc553d",
+          "size": 3584
         }
       ]
     },
@@ -222,8 +222,8 @@
       "files": [
         {
           "path": "yundian-growth-sales-feedback/SKILL.md",
-          "sha256": "ce3e6f2b4c6eaaa9b5312868542de8b7710d31371974116bf1e22a4384752083",
-          "size": 3251
+          "sha256": "256cdb92e48235c7e0313f7ccbdbd314f8775a8d930c76529983b1a4551f6190",
+          "size": 3989
         }
       ]
     },
@@ -295,8 +295,8 @@
       "files": [
         {
           "path": "yundian-growth-social-media/SKILL.md",
-          "sha256": "646f5f8d9d2e859b1b8f178f74ce5eebd3775cad129f4adf9ae697732eb5f4ae",
-          "size": 2618
+          "sha256": "e74db15cee15ed06f0c3fd00f90c12d4ad7d7d3d63572bef071868945f1f571d",
+          "size": 3802
         }
       ]
     },
@@ -312,13 +312,13 @@
         },
         {
           "path": "yundian-growth-workbench/references/MODULES.json",
-          "sha256": "60f29256bf8ee88dcc36d7cecaac72e278b02e270a5480bcafa1e06340be8244",
-          "size": 15565
+          "sha256": "f111b4d90ed419e8f642345bd51be399d8347ffa15bacffb963fab518e459dd9",
+          "size": 17444
         },
         {
           "path": "yundian-growth-workbench/references/WORKFLOWS.md",
-          "sha256": "4064f3123b19942ba2f8b47aa21baa3484c28ea709d315186fee31552a51c6d0",
-          "size": 1518
+          "sha256": "480d4e1b0177db645e532c9f2660712302d126603d379d46d9f602a630896b13",
+          "size": 3255
         },
         {
           "path": "yundian-growth-workbench/scripts/init_workspace.py",
@@ -337,8 +337,8 @@
         },
         {
           "path": "yundian-growth-workbench/SKILL.md",
-          "sha256": "7ef508da5fb7a9a73115991f8614aadf279a9c292b042c93b7a1c518a11cf688",
-          "size": 5159
+          "sha256": "0a40813bec467e089d31dad3e08cc322dd42e1e23b36b6e4b1deef73c7a3c689",
+          "size": 5599
         }
       ]
     }
@@ -347,26 +347,26 @@
     {
       "file": "yundian-growth-acquisition-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-acquisition",
-      "sha256": "7cbc22b5035546ba2d63652541929888e49731c425ef6282b6981c1146e4c885",
-      "size": 5063
+      "sha256": "071a6e39e022c90eaaffbc4d6de8a12bbaab8f1a100831cd7f364c69fa58ccad",
+      "size": 5801
     },
     {
       "file": "yundian-growth-buyer-check-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-buyer-check",
-      "sha256": "792f72212c26691b8c8f0be18ee59c732a02a8fdc65d896fe46720fea683a954",
-      "size": 12143
+      "sha256": "b3c83d6f508b463a525e5e5dd6fdb99680c21a357003c44421516dab0694a786",
+      "size": 12881
     },
     {
       "file": "yundian-growth-content-operations-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-content-operations",
-      "sha256": "dc54f6e6a37e5c6cc9ff980423cb113006247f6597c61854a24cbed48e61d919",
-      "size": 4042
+      "sha256": "f02dc1bed37d4cac947b6c74162804d1f685cf351c97793ff0b53a016b18784f",
+      "size": 5485
     },
     {
       "file": "yundian-growth-email-outreach-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-email-outreach",
-      "sha256": "40e06ceff1f18a5767dd8cb1a1cd44fb9f1a7916b5f494df6a5839098b2fd991",
-      "size": 3782
+      "sha256": "c1ef339346ad8ef1bf045486e9cfbcecf36ed6e7ba42decc7013402797c8d07d",
+      "size": 4520
     },
     {
       "file": "yundian-growth-facebook-ads-v0.16.0-working-tree.zip",
@@ -413,8 +413,8 @@
     {
       "file": "yundian-growth-sales-feedback-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-sales-feedback",
-      "sha256": "ea7280d155b3988419d9049da0da78cf11e554baaac3666158ab6b88c6b3a23d",
-      "size": 4187
+      "sha256": "a19809e912982f3ef9559056a94361fd873491af7f5c8dbfc8461e7a6580eeb1",
+      "size": 4925
     },
     {
       "file": "yundian-growth-seo-v0.16.0-working-tree.zip",
@@ -437,20 +437,20 @@
     {
       "file": "yundian-growth-social-media-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-social-media",
-      "sha256": "95614249f3c88c640f29be295a104dc113e7a08c13354028255ed568c46727e5",
-      "size": 3542
+      "sha256": "4b6dee06139c5e1a0a92991530ffc74900e1ce0a26485f3770fe3c951c3010fe",
+      "size": 4726
     },
     {
       "file": "yundian-growth-workbench-v0.15.0-working-tree.zip",
       "skillId": "yundian-growth-workbench",
-      "sha256": "c7f6d475aaee9e9ba149de8b6da841d84525f70a02bce5bff63a80b168b87e2b",
-      "size": 40533
+      "sha256": "5afc24fada9659507d008e5e486e8d1fec0c40fd2cce1ebfc377746ab6d62fcb",
+      "size": 44589
     },
     {
       "file": "yundian-growth-skills-v0.15.0-working-tree.zip",
       "skillId": null,
-      "sha256": "d3740ecbf2ea906f6ae3f08b80b3009dd65632660cdca363daf293935e6a826c",
-      "size": 231083
+      "sha256": "179d7227e2e65f3ab268f12ef9edf1114bc38981ba3a72ba1399b755508729a6",
+      "size": 240726
     }
   ]
 }

@@ -21,7 +21,11 @@
     "outputs": "市场研究报告、证据表、细分市场及买家需求清单",
     "acceptance": "每个关键结论能追溯来源与日期；标注未知项和研究局限",
     "handoff": "向产品机会交接需求/竞争证据，向内容运营交接买家问题",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "market-research",
+    "executionStage": "market-research",
+    "uiNumber": 1,
+    "consultationAvailable": false
   },
   "product-opportunity": {
     "id": "yundian-growth-product-opportunity",
@@ -33,7 +37,11 @@
     "outputs": "候选机会表、评分依据、风险清单、验证计划及 opportunityId",
     "acceptance": "未知成本不编造；评分与证据覆盖分开；潜在爆款只是待验证假设",
     "handoff": "向建站/内容运营交接产品证据、定位及验证假设",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "product-opportunity",
+    "executionStage": "product-opportunity",
+    "uiNumber": 2,
+    "consultationAvailable": false
   },
   "site-and-content": {
     "id": "yundian-growth-site-and-content",
@@ -45,7 +53,11 @@
     "outputs": "真实页面/代码、预览路径、测试记录、部署缺口及回退说明",
     "acceptance": "可打开并检查产物；平台与权限匹配；预览、测试、正式上线分别记录",
     "handoff": "向 SEO与GEO 交接站点和页面；向内容运营交接页面结构；不承担持续内容生产",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "site-and-content",
+    "executionStage": "site-and-content",
+    "uiNumber": 3,
+    "consultationAvailable": true
   },
   "acquisition": {
     "id": "yundian-growth-acquisition",
@@ -57,7 +69,11 @@
     "outputs": "买家清单、联系人核验、开发信草稿、跟进计划与实际触达记录",
     "acceptance": "不能编造联系人、已发送状态或回复；不默认批量发送；不包含广告报告及泛社媒获客",
     "handoff": "按 leadId 向客户背调交接主体与来源，向销售反馈交接真实触达记录",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "acquisition",
+    "executionStage": "acquisition",
+    "uiNumber": 6,
+    "consultationAvailable": true
   },
   "buyer-check": {
     "id": "yundian-growth-buyer-check",
@@ -69,7 +85,11 @@
     "outputs": "主体证据、匹配判断、风险与未知项、核验问题及 leadId",
     "acceptance": "联系人关系和采购意向各有证据；预测评分不冒充采购力或成交结果",
     "handoff": "向销售反馈交接核验依据；向主动获客反馈画像或名单质量",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "buyer-check",
+    "executionStage": "buyer-check",
+    "uiNumber": 7,
+    "consultationAvailable": false
   },
   "sales-feedback": {
     "id": "yundian-growth-sales-feedback",
@@ -81,7 +101,11 @@
     "outputs": "线索反馈表、质量原因、样本/时间窗、待反馈清单与下一步",
     "acceptance": "缺少结果保持待反馈；统计分母明确；不由背调预测生成销售结果",
     "handoff": "向优化下一轮交接真实质量反馈，向知识库提交可确认的买家需求",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "sales-feedback",
+    "executionStage": "sales-feedback",
+    "uiNumber": 8,
+    "consultationAvailable": false
   },
   "next-cycle": {
     "id": "yundian-growth-next-cycle",
@@ -92,8 +116,12 @@
     "instructions": "区分证据和假设；定位获客瓶颈；排列改进优先级；设定验证指标；定义下一轮目标和业务阶段任务",
     "outputs": "复盘报告、改进假设、优先级、验证指标及下一轮任务定义",
     "acceptance": "每项改进引用依据；缺反馈明确缺口；未经实际保存的任务只能标记建议",
-    "handoff": "将新任务分配回九个业务入口，保留上一轮 cycleId/leadId/opportunityId 关系",
-    "version": "0.16.0"
+    "handoff": "将新任务分配回对应13个业务项目，保留上一轮 cycleId/leadId/opportunityId 关系",
+    "version": "0.16.0",
+    "uiModule": "next-cycle",
+    "executionStage": "next-cycle",
+    "uiNumber": 9,
+    "consultationAvailable": true
   },
   "seo-geo": {
     "id": "yundian-growth-seo-geo",
@@ -105,7 +133,11 @@
     "outputs": "逐项验收台账、证据、负责人、修复措施、复查日期与待验证项",
     "acceptance": "通过必须有实际证据；不适用必须有理由；不得由部分通过推断整体达标",
     "handoff": "向建站交接技术修复；向内容运营交接搜索意图、事实表达和内容缺口",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "seo-geo",
+    "executionStage": "seo-geo",
+    "uiNumber": 4,
+    "consultationAvailable": true
   },
   "content-operations": {
     "id": "yundian-growth-content-operations",
@@ -117,31 +149,43 @@
     "outputs": "选题表、真实草稿/素材、发布计划、实际回执及效果复盘",
     "acceptance": "草稿与已发布分开；公开声明有依据；效果有来源，不以生成数量代替获客结果",
     "handoff": "向 SEO与GEO 交接内容验收；向主动获客交接产品资料与沟通素材",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "content-operations",
+    "executionStage": "content-operations",
+    "uiNumber": 5,
+    "consultationAvailable": true
   },
   "seo": {
     "id": "yundian-growth-seo",
     "title": "SEO",
     "path": "skills/yundian-growth-seo/SKILL.md",
-    "module": "seo",
+    "module": "seo-geo",
     "inputs": "站点 URL、平台、访问权限、关键词、Search Console 导出与企业事实",
     "instructions": "先确定 Shopify / WordPress / 其他站点；读取 ../yundian-growth-seo-geo/references/checklist.json 及该目录已有标准，保留38/26项适用范围。检查抓取、robots、canonical、索引、重定向、移动可用性与站内链接；逐页匹配搜索意图，核实标题、正文、结构化数据是否与可见事实一致。用 Search Console 实际时间窗分解展示/点击/CTR与查询，不将流量下降直接归因为技术缺陷。列修复优先级、负责人、证据、复查日期；获授权修改后复查原 URL；不可访问保持待验证。",
     "outputs": "技术审计、关键词到页面映射、修复台账与复查证据",
     "acceptance": "通过项须URL或读回证据；不适用给理由；索引、排名、转化分别记录，不承诺排名",
     "handoff": "关联真实线索与销售反馈，向下一轮交接证据和缺口",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "seo-geo",
+    "executionStage": "seo",
+    "uiNumber": 4,
+    "consultationAvailable": true
   },
   "geo": {
     "id": "yundian-growth-geo",
     "title": "GEO",
     "path": "skills/yundian-growth-geo/SKILL.md",
-    "module": "geo",
+    "module": "seo-geo",
     "inputs": "企业事实及来源、目标买家问题、站点页面、目标AI搜索产品和可重复观察条件",
     "instructions": "将认证、规格、适用场景、交期等事实连接可追溯来源；整理买家比较/应用/采购问题，建立简明回答与证据链接。检查正文可访问性、来源日期、作者与实体一致性，结构化数据须匹配可见内容。按指定AI搜索产品、日期、地区、账号条件记录实际回答及引用 URL，多次观察区分波动；未观察不写已被引用。制定基线/改动/复查实验，同时检查搜索可索引与片段资格。Google官方说明现有SEO基础仍适用，不要求特殊AI schema，不保证AI引用。",
     "outputs": "事实卡、问题到证据映射、引用观察表及优化实验",
     "acceptance": "事实与推断分开；引用记录附条件和实际证据；优化计划不冒充AI收录",
     "handoff": "关联真实线索与销售反馈，向下一轮交接证据和缺口",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "seo-geo",
+    "executionStage": "geo",
+    "uiNumber": 4,
+    "consultationAvailable": true
   },
   "social-media": {
     "id": "yundian-growth-social-media",
@@ -153,7 +197,11 @@
     "outputs": "渠道方案、内容日历、平台适配稿、发布回执与复盘",
     "acceptance": "计划、草稿、已发布状态分开；无发布回执不得已发布；询盘与互动分别计数",
     "handoff": "关联真实线索与销售反馈，向下一轮交接证据和缺口",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "social-media",
+    "executionStage": "social-media",
+    "uiNumber": 10,
+    "consultationAvailable": true
   },
   "facebook-ads": {
     "id": "yundian-growth-facebook-ads",
@@ -165,7 +213,11 @@
     "outputs": "广告结构/创意方案、事件核验表、效果报告与实验计划",
     "acceptance": "无转化证据保持待验证；未知指标不补零；报告列分母及归因窗口；没有授权不投放",
     "handoff": "关联真实线索与销售反馈，向下一轮交接证据和缺口",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "facebook-ads",
+    "executionStage": "facebook-ads",
+    "uiNumber": 11,
+    "consultationAvailable": true
   },
   "google-ads": {
     "id": "yundian-growth-google-ads",
@@ -177,7 +229,11 @@
     "outputs": "关键词/否词表、账户结构、广告草稿、追踪审计与效果报告",
     "acceptance": "关键词和效果有导出依据；缺追踪不宣称优化有效；方案与账户已变更分开",
     "handoff": "关联真实线索与销售反馈，向下一轮交接证据和缺口",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "google-ads",
+    "executionStage": "google-ads",
+    "uiNumber": 12,
+    "consultationAvailable": true
   },
   "email-outreach": {
     "id": "yundian-growth-email-outreach",
@@ -189,6 +245,10 @@
     "outputs": "名单核验、个性化邮件/跟进序列、发送准备清单与执行复盘",
     "acceptance": "未授权不发送；不存在回执不写已发送；退订停止触达；未知送达与回复保持未知",
     "handoff": "关联真实线索与销售反馈，向下一轮交接证据和缺口",
-    "version": "0.16.0"
+    "version": "0.16.0",
+    "uiModule": "email-outreach",
+    "executionStage": "email-outreach",
+    "uiNumber": 13,
+    "consultationAvailable": true
   }
 }

@@ -1,3 +1,10 @@
+import { CrmService } from "./src/crm/service.js";
+import { crmFamilies } from "./src/crm/validation.js";
+import { PublicationService } from "./src/publishing/service.js";
+import { McpPublisher } from "./src/publishing/mcp-client.js";
+import { ContentService } from "./src/content/service.js";
+import { authorizeOwner, loadOwnerConfig, verifyPassword, issueOwnerSession, revokeOwnerSession } from "./src/auth/owner.js";
+import { loadPublisherSecrets, publisherMetadata, savePublisherSecrets } from "./src/publishing/secrets.js";
 import { createSnapshot, restoreSnapshot, setOnlineBackup } from "./src/backup/service.js";
 import { inspectUpdate } from "./src/updates/check.js";
 import { deliveryCatalog, createDeliveryProgram, deliveryProgress } from "./src/domain/delivery.js";
@@ -15,14 +22,6 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 const APP = path.dirname(fileURLToPath(import.meta.url));
-/* 公网模式判定（云店+ 定制 2026-10-08）：
-   踩坑记录：代码里读的是 WORKBENCH_PUBLIC，而发布说明里一直写的是 WORKBUDDY_PUBLIC
-   （名字记错了），此前能跑通只是因为部署端恰好注入过同名变量；重建沙箱后注入消失，
-   直接 403 Invalid host。结论：不能依赖「环境变量名是否猜对」，也不能依赖
-   部署端是否用 shell 解析「VAR=1 node …」这种前缀。
-   改为显式开关 --public，startCmd 写成「node server.js --root /workspace --public」，
-   两种环境变量仍保留兼容。 */
-const publicMode = () => process.env.WORKBENCH_PUBLIC === '1' || process.env.WORKBUDDY_PUBLIC === '1' || process.argv.includes('--public');
 const VERSION = JSON.parse(fs.readFileSync(path.join(APP, 'package.json'), 'utf8')).version;
 export function releaseInfo(value, current = VERSION) {
     if (!/^\d+\.\d+\.\d+$/.test(value.version) || value.tag !== 'v' + value.version)
@@ -42,6 +41,30 @@ const SUPPORTED_STAGES = [...STAGES, 'seo', 'geo', 'social-media', 'facebook-ads
 const id = () => crypto.randomUUID().replaceAll('-', '');
 const validId = (v) => /^[a-f0-9]{32}$/.test(v);
 const sha = (v) => crypto.createHash('sha256').update(v).digest('hex');
+const publicMode = (argv, env) => env.WORKBENCH_PUBLIC === '1' || argv.includes('--public');
+export function parseRuntimeOptions(argv, env) {
+    const option = (key) => { const at = argv.indexOf(key); return at < 0 ? undefined : argv[at + 1]; };
+    const projectRoot = option('--root');
+    if (!projectRoot || projectRoot.startsWith('--'))
+        throw Error('Required --root CUSTOMER_PROJECT');
+    const port = Number(argv.includes('--port') ? option('--port') : env.PORT ?? 8767);
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+        throw Error('Invalid port');
+    return { projectRoot, port, publicMode: publicMode(argv, env) };
+}
+function knowledgeCheck(store) {
+    try {
+        const manifest = JSON.parse(fs.readFileSync(path.join(APP, '.sync-manifest.json'), 'utf8'));
+        const names = Object.keys(manifest).filter(file => file.endsWith('.md'));
+        const kbDir = path.join(store.base, 'knowledge');
+        const drifted = names.filter(file => { const target = path.join(kbDir, file); return !fs.existsSync(target) || crypto.createHash('sha1').update(fs.readFileSync(target)).digest('hex') !== manifest[file]; });
+        const present = fs.existsSync(kbDir) ? fs.readdirSync(kbDir).filter(file => file.endsWith('.md')).length : 0;
+        return { status: drifted.length ? 'drift' : 'ok', total: names.length, present, drifted, at: manifest.__at || null };
+    }
+    catch {
+        return { status: 'no-baseline', total: 0, present: 0, drifted: [], at: null };
+    }
+}
 // 云服务公开配置：优先环境变量，其次应用根目录 cloud-config.json；未配置返回 null，前端自动降级为无云服务模式。
 const loadCloudConfig = () => {
     const fromEnv = (() => {
@@ -80,7 +103,7 @@ export class FileWorkspace extends WorkspaceStore {
                     throw e;
             }
         }
-        for (const name of ['tasks', 'artifacts', 'workflows', 'feedback', 'records', 'audits'])
+        for (const name of ['tasks', 'artifacts', 'workflows', 'feedback', 'records', 'audits', ...crmFamilies])
             fs.mkdirSync(this.checked(path.join(this.base, name)), { recursive: true });
     }
     registry() { return JSON.parse(fs.readFileSync(path.join(APP, 'skills/registry.json'), 'utf8')); }
@@ -115,7 +138,7 @@ export class FileWorkspace extends WorkspaceStore {
                 this.write(dst, fs.readFileSync(src, 'utf8'));
     }
     digest() {
-        const files = [path.join(this.base, 'workbench.json'), ...this.files('tasks', '.json'), ...this.files('artifacts', '.md'), ...this.files('artifacts', '.json'), ...this.files('reviews', '.json'), ...this.files('receipts', '.json'), ...this.files('knowledge-confirmations', '.json'), ...this.files('knowledge', '.md'), ...this.files('records', '.json'), ...this.files('audits', '.json'), ...this.files('daily-decisions', '.json'), ...this.files('schedules', '.json'), ...this.files('schedule-occurrences', '.json'), ...this.files('delivery-programs', '.json')].sort();
+        const files = [path.join(this.base, 'workbench.json'), ...this.files('tasks', '.json'), ...this.files('artifacts', '.md'), ...this.files('artifacts', '.json'), ...this.files('reviews', '.json'), ...this.files('receipts', '.json'), ...this.files('knowledge-confirmations', '.json'), ...this.files('knowledge', '.md'), ...this.files('records', '.json'), ...this.files('audits', '.json'), ...this.files('daily-decisions', '.json'), ...this.files('schedules', '.json'), ...this.files('schedule-occurrences', '.json'), ...this.files('delivery-programs', '.json'), ...this.files('content-items', '.json'), ...this.files('publish-attempts', '.json'), ...this.files('publish-confirmations', '.json'), ...crmFamilies.flatMap(f => this.files(f, '.json'))].sort();
         const h = crypto.createHash('sha256');
         for (const file of files)
             if (fs.existsSync(this.checked(file)))
@@ -174,6 +197,8 @@ export class FileWorkspace extends WorkspaceStore {
                 t.status = all && ['completed', 'needs-review'].includes(t.status) ? 'completed' : (t.status === 'completed' || t.status === 'needs-review') ? 'needs-review' : t.status;
             }
         }
+        const crm = new CrmService(this);
+        state.crm = { companies: crm.listCompanies({ includeArchived: true }), contacts: crm.listContacts({ includeArchived: true }), leads: crm.listLeads({ includeArchived: true }), followups: crm.listFollowUps({ includeArchived: true }), feedbackLinks: crm.list('crm-feedback-links', {}) };
         state.serviceCatalog = deliveryCatalog();
         state.deliveryPrograms = this.files('delivery-programs', '.json').map(f => this.json(f)).filter(p => p.workspaceId === state.workspace.workspaceId).map(p => { const progress = deliveryProgress(p, state.tasks, state.artifacts, state.reviews); return { ...p, artifactIds: progress.artifactIds, progress }; });
         const confirmations = this.files('knowledge-confirmations', '.json').map(f => this.json(f));
@@ -206,7 +231,14 @@ export class FileWorkspace extends WorkspaceStore {
     }
     checkRevision(revision) { if (revision !== this.digest())
         throw Error('资料已被其他操作更新，请刷新后重试'); }
-    createTask(input, revision) { const before = this.load().tasks.map((t) => t.id); const state = this.save({ action: 'task', payload: input, revision }); return state.tasks.find((t) => !before.includes(t.id)); }
+    createTask(input, revision) { if (input.sourceLeadId !== undefined) {
+        const context = new CrmService(this).crmLeadContext(input.sourceLeadId);
+        if (context.lead.archivedAt)
+            throw Error('CRM lead archived');
+        if (!['buyer-check', 'acquisition', 'email-outreach', 'sales-feedback'].includes(input.stage))
+            throw Error('CRM context is private to customer acquisition tasks');
+        input = { ...input, inputs: JSON.stringify({ crmLeadId: context.lead.id, sourceLeadId: context.lead.sourceLeadId, source: context.lead.source, currentLead: context.lead, company: context.company, contacts: context.contacts, followups: context.followups, artifactIds: context.artifactIds }), instructions: (input.instructions || '') + '\n仅当前客户私有任务取用 CRM 实际记录；不得自动发送、提取虚构联系人、标记成交或共享至咨询/发布/知识库。' };
+    } const before = this.load().tasks.map((t) => t.id); const state = this.save({ action: 'task', payload: input, revision }); return state.tasks.find((t) => !before.includes(t.id)); }
     task(taskId) { if (!validId(taskId))
         throw Error('Invalid task'); const file = path.join(this.base, 'tasks', taskId + '.json'); if (!fs.existsSync(file))
         throw Error('任务不存在'); const task = this.json(file); if (task.id !== taskId)
@@ -381,7 +413,7 @@ export class FileWorkspace extends WorkspaceStore {
                 if (suggestion.taskId || suggestion.stage === 'knowledge')
                     throw Error('请使用现有任务或补充企业资料');
                 const skill = current.skills[suggestion.stage];
-                const task = this.createTask({ name: suggestion.name, stage: suggestion.stage, inputs: suggestion.inputs, instructions: skill.instructions, acceptance: skill.acceptance, cycleId: suggestion.id.startsWith('feedback:') ? JSON.parse(suggestion.inputs).cycleId || 'cycle-1' : 'cycle-1' }, current.revision);
+                const task = this.createTask({ name: suggestion.name, stage: suggestion.stage, inputs: suggestion.inputs, ...(suggestion.id.startsWith('crm-followup:') ? { sourceLeadId: JSON.parse(suggestion.inputs).lead.id } : {}), instructions: skill.instructions, acceptance: skill.acceptance, cycleId: suggestion.id.startsWith('feedback:') ? JSON.parse(suggestion.inputs).cycleId || 'cycle-1' : 'cycle-1' }, current.revision);
                 decision = { ...decision, status: 'created', taskId: task.id };
             }
             this.put(path.join(this.base, 'daily-decisions', sha(Buffer.from(suggestion.id)) + '.json'), decision);
@@ -502,6 +534,14 @@ export class FileWorkspace extends WorkspaceStore {
             this.write(path.join(this.base, 'knowledge', id() + '.md'), '# ' + text('title').trim() + '\n\n' + text('content', 900000).trim() + '\n\n来源：' + text('source').trim() + '\n日期：' + now + '\n审核状态：待确认\n');
         }
         else if (action === 'task') {
+            if (p.sourceLeadId !== undefined) {
+                const context = new CrmService(this).crmLeadContext(p.sourceLeadId);
+                if (context.lead.archivedAt || context.company.archivedAt)
+                    throw Error('CRM source is archived');
+                if (!['buyer-check', 'acquisition', 'email-outreach', 'sales-feedback'].includes(p.stage))
+                    throw Error('CRM context must remain in private acquisition tasks');
+                p.inputs = JSON.stringify({ crmLeadId: context.lead.id, sourceLeadId: context.lead.sourceLeadId, source: context.lead.source, currentLead: context.lead, company: context.company, contacts: context.contacts, followups: context.followups, artifactIds: context.artifactIds });
+            }
             if (!state.profile.company)
                 throw Error('请先创建企业知识库');
             if (!SUPPORTED_STAGES.includes(p.stage) || !text('name').trim())
@@ -533,10 +573,18 @@ export class FileWorkspace extends WorkspaceStore {
         return this.load();
     }
 }
-export function createServer(store, port) {
+export function createServer(store, port, options = {}) {
     const token = crypto.randomBytes(32).toString('base64url');
-    const isPublic = publicMode();
+    const isPublic = options.publicMode ?? publicMode(process.argv.slice(2), process.env);
+    const secretRoot = options.appRoot ?? APP;
+    const owner = options.ownerConfig ?? loadOwnerConfig(secretRoot, isPublic);
+    if (owner.publicMode !== isPublic)
+        throw Error('Owner configuration mode mismatch');
     const cloudConfig = loadCloudConfig();
+    const content = new ContentService(store);
+    const crm = new CrmService(store);
+    const publication = new PublicationService(store, () => { const secrets = loadPublisherSecrets(secretRoot); if (!secrets.apiKey)
+        throw Error('Publisher unavailable'); return { secrets, publisher: options.publisherPort ?? new McpPublisher(secrets.apiKey, options.publisherFetch) }; });
     return http.createServer(async (req, res) => {
         const respond = (value, status = 200, mime = 'application/json; charset=utf-8') => {
             const data = Buffer.isBuffer(value) ? value : Buffer.from(JSON.stringify(value));
@@ -547,6 +595,43 @@ export function createServer(store, port) {
             return respond({ error: 'Invalid host' }, 403);
         const pathname = (req.url ?? '/').split('?')[0];
         try {
+            const origin = req.headers.origin;
+            const protocol = req.socket.encrypted || (options.trustProxy && req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http';
+            if (origin && origin !== protocol + '://' + req.headers.host)
+                return respond({ error: 'Invalid origin' }, 403);
+            if (pathname === '/healthz' && req.method === 'GET')
+                return respond({ ok: true });
+            if (pathname === '/api/auth/status' && req.method === 'GET')
+                return respond({ ...authorizeOwner(req, owner), publicMode: isPublic });
+            if (pathname === '/api/auth/login' && req.method === 'POST') {
+                if (!owner.passwordHash)
+                    return respond({ error: 'Configure owner with local CLI', setupRequired: true }, 401);
+                const chunks = [];
+                let size = 0;
+                for await (const chunk of req) {
+                    size += chunk.length;
+                    if (size > 4096)
+                        return respond({ error: 'Request too large' }, 413);
+                    chunks.push(chunk);
+                }
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                if (!verifyPassword(body.password, owner.passwordHash))
+                    return respond({ error: 'Invalid owner password', loginRequired: true }, 401);
+                const session = issueOwnerSession(owner);
+                res.setHeader('Set-Cookie', 'wb_owner=' + session + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=' + owner.sessionTtlSeconds + (protocol === 'https' ? '; Secure' : ''));
+                return respond({ allowed: true });
+            }
+            const auth = authorizeOwner(req, owner);
+            const shell = ['/', '/index.html', '/styles-v03.css', '/web/main.js', '/web/auth-bootstrap.js', '/web/modules.js', '/web/views/login.js'];
+            if (!auth.allowed && !shell.includes(pathname))
+                return respond({ ...auth, error: auth.setupRequired ? 'Owner setup required' : 'Owner login required' }, 401);
+            if (pathname === '/api/auth/logout' && req.method === 'POST') {
+                if (req.headers['x-workspace-token'] !== token)
+                    return respond({ error: 'Invalid workspace token' }, 403);
+                revokeOwnerSession(req, owner);
+                res.setHeader('Set-Cookie', 'wb_owner=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' + (protocol === 'https' ? '; Secure' : ''));
+                return respond({ ok: true });
+            }
             if (req.method === 'GET') {
                 if (pathname === '/healthz')
                     return respond({ ok: true });
@@ -568,28 +653,40 @@ export function createServer(store, port) {
                         return respond({ error: '版本检查失败，请稍后重试或在WorkBuddy检查仓库版本' }, 502);
                     }
                 }
-                if (pathname === '/api/state') {
-                    const st = store.load();
-                    /* 知识库同步自检：与 .sync-manifest.json 基线比对，
-                       用于发现「本地改了但忘了同步到发布目录」或「线上被改坏」。 */
-                    let kbCheck = { status: 'unknown', total: 0, present: 0, drifted: [], at: null };
-                    try {
-                        const mf = JSON.parse(fs.readFileSync(path.join(APP, '.sync-manifest.json'), 'utf8'));
-                        const names = Object.keys(mf).filter(f => f.endsWith('.md'));
-                        const kbDir = path.join(store.base, 'knowledge');
-                        const drifted = names.filter(f => {
-                            const p = path.join(kbDir, f);
-                            if (!fs.existsSync(p)) return true;
-                            return crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex') !== mf[f];
-                        });
-                        const present = fs.existsSync(kbDir)
-                            ? fs.readdirSync(kbDir).filter(f => f.endsWith('.md')).length : 0;
-                        kbCheck = { status: drifted.length ? 'drift' : 'ok', total: names.length, present, drifted, at: mf.__at || null };
-                    } catch {
-                        kbCheck = { status: 'no-baseline', total: 0, present: 0, drifted: [], at: null };
-                    }
-                    return respond({ ...st, token, projectRoot: store.root, cloud: cloudConfig, kbCheck });
+                if (/^\/api\/crm\/leads\/[a-f0-9]{32}\/context$/.test(pathname))
+                    return respond({ context: crm.crmLeadContext(pathname.split('/')[4]), revision: store.load().revision });
+                if (pathname.startsWith('/api/crm/')) {
+                    const match = /^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32}))?$/.exec(pathname);
+                    if (!match)
+                        return respond({ error: 'Not found' }, 404);
+                    const family = 'crm-' + match[1], filters = Object.fromEntries(new URL(req.url, 'http://localhost').searchParams);
+                    return respond({ items: match[2] ? [crm.get(family, match[2])] : crm.list(family, filters), revision: store.load().revision });
                 }
+                if (pathname === '/api/content/items') {
+                    const params = new URL(req.url, 'http://localhost').searchParams;
+                    return respond({ items: content.list(Object.fromEntries(params)), revision: store.load().revision });
+                }
+                if (pathname === '/api/publisher/attempts')
+                    return respond({ attempts: publication.listAttempts(), revision: store.load().revision });
+                if (pathname === '/api/content/export')
+                    return respond(content.exportPlan());
+                if (['/api/publisher/connect', '/api/publisher/channels', '/api/publisher/media', '/api/publisher/balance'].includes(pathname)) {
+                    const key = loadPublisherSecrets(secretRoot).apiKey;
+                    if (!key)
+                        return respond({ connected: false, checkedAt: new Date().toISOString(), capabilities: [], error: '发布服务未配置' }, 409);
+                    const publisher = new McpPublisher(key, options.publisherFetch);
+                    if (pathname.endsWith('/connect'))
+                        return respond(await publisher.connect());
+                    if (pathname.endsWith('/channels'))
+                        return respond({ channels: await publisher.listChannels() });
+                    if (pathname.endsWith('/media'))
+                        return respond({ media: await publisher.listMedia() });
+                    return respond(await publisher.getBalance());
+                }
+                if (pathname === '/api/publisher/config')
+                    return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
+                if (pathname === '/api/state')
+                    return respond({ ...store.load(), token, projectRoot: store.root, cloud: isPublic ? null : cloudConfig, publisher: publisherMetadata(loadPublisherSecrets(secretRoot)), kbCheck: knowledgeCheck(store) });
                 if (pathname.startsWith('/api/artifacts/')) {
                     const parts = pathname.split('/'), a = store.artifact(parts[3]);
                     if (parts[4] === 'file') {
@@ -607,12 +704,12 @@ export function createServer(store, port) {
                     const file = store.checked(path.join(store.base, 'artifacts', name));
                     return fs.existsSync(file) ? respond(fs.readFileSync(file), 200, 'text/plain; charset=utf-8') : respond({ error: 'Not found' }, 404);
                 }
-                const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app-v03.js': ['app-v03.js', 'text/javascript'], '/styles-v03.css': ['styles-v03.css', 'text/css'], '/brand.jpg': ['brand.jpg', 'image/jpeg'], ...Object.fromEntries(['main.js', 'api.js', 'safe-url.js', 'views/workbench.js', 'views/settings.js', 'views/skills.js', 'views/knowledge.js', 'views/results.js', 'views/daily-actions.js', 'views/schedules.js', 'views/services.js', 'views/backup.js'].map(file => ['/web/' + file, ['web/' + file, 'text/javascript']])) };
+                const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app-v03.js': ['app-v03.js', 'text/javascript'], '/styles-v03.css': ['styles-v03.css', 'text/css'], '/brand.jpg': ['brand.jpg', 'image/jpeg'], ...Object.fromEntries(['auth-bootstrap.js', 'views/login.js', 'views/content-plan.js', 'views/crm.js', 'modules.js', 'main.js', 'api.js', 'safe-url.js', 'views/workbench.js', 'views/settings.js', 'views/skills.js', 'views/knowledge.js', 'views/results.js', 'views/daily-actions.js', 'views/schedules.js', 'views/services.js', 'views/backup.js'].map(file => ['/web/' + file, ['web/' + file, 'text/javascript']])) };
                 if (!files[pathname])
                     return respond({ error: 'Not found' }, 404);
                 return respond(fs.readFileSync(path.join(APP, files[pathname][0])), 200, files[pathname][1]);
             }
-            if (req.method !== 'POST' || !(pathname === '/api/backup/restore' || pathname === '/api/backup/online' || pathname === '/api/save' || pathname === '/api/tasks' || /^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname) || pathname === '/api/knowledge/confirm'))
+            if (!(req.method === 'POST' || req.method === 'PATCH' && pathname.startsWith('/api/crm/')) || !(pathname.startsWith('/api/crm/') || pathname.startsWith('/api/content/') || pathname === '/api/publisher/config' || /^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname) || pathname === '/api/backup/restore' || pathname === '/api/backup/online' || pathname === '/api/save' || pathname === '/api/tasks' || /^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname) || pathname === '/api/knowledge/confirm'))
                 return respond({ error: 'Not found' }, 404);
             if (req.headers['x-workspace-token'] !== token)
                 return respond({ error: '授权校验失败，请刷新工作台' }, 403);
@@ -628,6 +725,65 @@ export function createServer(store, port) {
             }
             // Synchronous mutations serialize revision checks and writes within this process.
             const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            if (pathname.startsWith('/api/crm/')) {
+                store.checkRevision(body.revision);
+                if (body.workspaceId !== crm.workspaceId)
+                    throw Error('CRM workspace mismatch');
+                let result;
+                const match = /^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32})(?:\/(archive))?)?$/.exec(pathname);
+                if (req.method === 'POST' && pathname === '/api/crm/feedback-links') {
+                    if (body.confirmed !== true)
+                        throw Error('Customer confirmation required');
+                    result = crm.linkFeedback(body.feedbackId, body.crmLeadId);
+                }
+                else if (req.method === 'POST' && pathname === '/api/crm/import/preview')
+                    result = crm.previewImport(body.rows);
+                else if (req.method === 'POST' && pathname === '/api/crm/import/confirm')
+                    result = crm.confirmImport(body.previewId, body.decisions);
+                else if (match) {
+                    const [, kind, entityId, archive] = match;
+                    if (archive && req.method === 'POST' && kind !== 'followups')
+                        result = crm.archiveEntity(kind === 'companies' ? 'company' : kind === 'contacts' ? 'contact' : 'lead', entityId);
+                    else if (entityId && req.method === 'PATCH' && !archive && kind !== 'followups')
+                        result = kind === 'companies' ? crm.updateCompany(entityId, body.input) : kind === 'contacts' ? crm.updateContact(entityId, body.input) : crm.updateLead(entityId, body.input);
+                    else if (!entityId && req.method === 'POST')
+                        result = kind === 'companies' ? crm.createCompany(body.input) : kind === 'contacts' ? crm.createContact(body.input) : kind === 'leads' ? crm.createLead(body.input) : crm.recordFollowUp(body.input);
+                    else
+                        return respond({ error: 'Not found' }, 404);
+                }
+                else
+                    return respond({ error: 'Not found' }, 404);
+                return respond({ result, crm: store.load().crm, revision: store.load().revision });
+            }
+            const publishing = /^\/api\/content\/items\/([\w-]+)\/(prepare-publish|publish)$/.exec(pathname), refresh = /^\/api\/publisher\/attempts\/([\w-]+)\/refresh$/.exec(pathname);
+            if (publishing || refresh) {
+                store.checkRevision(body.revision);
+                const result = refresh ? await publication.refreshAttempt(refresh[1]) : publishing[2] === 'prepare-publish' ? await publication.preparePublish(publishing[1], body.input) : await publication.submitPublish(publishing[1], body.confirmationId);
+                return respond({ result, items: content.list({}), attempts: publication.listAttempts(), revision: store.load().revision });
+            }
+            if (pathname.startsWith('/api/content/')) {
+                store.checkRevision(body.revision);
+                let result;
+                const match = /^\/api\/content\/items\/([\w-]+)(?:\/(approve|archive))?$/.exec(pathname);
+                if (pathname === '/api/content/items')
+                    result = content.create(body.input);
+                else if (pathname === '/api/content/import/preview')
+                    result = content.previewImport(body.raw, body.format);
+                else if (pathname === '/api/content/import/confirm')
+                    result = content.confirmImport(body.previewId, body.decisions);
+                else if (match)
+                    result = match[2] === 'approve' ? content.approve(match[1], body.contentHash) : match[2] === 'archive' ? content.archive(match[1], body.expectedRevision) : content.update(match[1], body.input, body.expectedRevision);
+                else
+                    return respond({ error: 'Not found' }, 404);
+                return respond({ result, items: content.list({}), revision: store.load().revision });
+            }
+            if (pathname === '/api/publisher/config') {
+                if (body.revision !== store.load().revision)
+                    throw Error('Workspace changed');
+                const existing = loadPublisherSecrets(secretRoot);
+                savePublisherSecrets(secretRoot, { ...body.config, apiKey: body.config?.apiKey === undefined ? existing.apiKey : body.config.apiKey }, auth);
+                return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
+            }
             if (pathname.startsWith('/api/backup/')) {
                 if (body.revision !== store.load().revision)
                     throw Error('项目已变化，请刷新后再恢复');
@@ -652,17 +808,11 @@ export function createServer(store, port) {
             return respond(store.save(body));
         }
         catch (e) {
-            return respond({ error: e.code ? '文件操作失败，请检查项目目录' : e.message }, e.code ? 500 : 400);
+            return respond({ error: e.code ? '文件操作失败，请检查项目目录' : pathname.startsWith('/api/publisher/') || pathname.startsWith('/api/auth/') ? 'Private configuration request failed' : e.message }, e.code ? 500 : 400);
         }
     });
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    const args = process.argv.slice(2), option = (key) => args[args.indexOf(key) + 1];
-    if (!args.includes('--root'))
-        throw Error('Required --root CUSTOMER_PROJECT');
-    const isPublic = publicMode();
-    const port = Number(args.includes('--port') ? option('--port') : process.env.PORT ?? 8767);
-    if (!Number.isInteger(port) || port < 1 || port > 65535)
-        throw Error('Invalid port');
-    createServer(new FileWorkspace(option('--root')), port).listen(port, isPublic ? '0.0.0.0' : '127.0.0.1', () => console.log('WorkBuddy workbench: http://127.0.0.1:' + port + (isPublic ? ' (public bind)' : '')));
+    const { projectRoot, port, publicMode: isPublic } = parseRuntimeOptions(process.argv.slice(2), process.env);
+    createServer(new FileWorkspace(projectRoot), port, { publicMode: isPublic, trustProxy: process.env.WORKBENCH_TRUST_PROXY === '1' }).listen(port, isPublic ? '0.0.0.0' : '127.0.0.1', () => console.log('WorkBuddy workbench: http://127.0.0.1:' + port + (isPublic ? ' (public bind)' : '')));
 }

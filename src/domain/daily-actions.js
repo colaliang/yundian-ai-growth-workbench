@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-export function dailyContext(state) { return { workspaceId: state.workspace.workspaceId, profile: state.profile || {}, tasks: state.tasks || [], knowledge: state.knowledge || [], artifacts: state.artifacts || [], feedback: state.feedback || [], skills: state.skills || {}, decisions: state.dailyDecisions || {} }; }
+export function dailyContext(state) { return { workspaceId: state.workspace.workspaceId, profile: state.profile || {}, tasks: state.tasks || [], knowledge: state.knowledge || [], artifacts: state.artifacts || [], feedback: state.feedback || [], skills: state.skills || {}, crm: state.crm || {}, crmFollowUps: state.crm?.followups || [], decisions: state.dailyDecisions || {} }; }
 export function recommendDaily(input, now, limit = 5) {
     const rows = [];
     const add = (id, name, stage, reason, priority, taskId = null, missingInputs = [], dueAt = '', inputs = '') => { const skill = input.skills[stage]; if (skill)
@@ -17,6 +17,15 @@ export function recommendDaily(input, now, limit = 5) {
         const due = Date.parse(t.followUpAt || t.dueAt || '');
         const overdue = Number.isFinite(due) && due <= Date.parse(now);
         add('task:' + t.id, t.name, t.stage, blocked ? '任务受阻，需要补充输入。' : overdue ? '任务跟进已到期，请核对实际结果并推进。' : t.status === 'needs-review' ? '已有产物等待客户验收。' : '当前阶段仍有未完成任务。', blocked ? 0 : overdue ? 1 : 2, t.id, gaps, t.followUpAt || t.dueAt || '', t.inputs || '');
+    }
+    for (const lead of input.crm.leads || []) {
+        if (lead.archivedAt || ['won', 'lost'].includes(lead.stage) || (input.crm.companies || []).find((c) => c.id === lead.companyId)?.archivedAt)
+            continue;
+        const latest = input.crmFollowUps.filter(f => f.leadId === lead.id && f.kind === 'followup' && !f.archivedAt).sort((a, b) => b.time.localeCompare(a.time) || b.createdAt?.localeCompare(a.createdAt || '') || b.id.localeCompare(a.id))[0];
+        if (!latest?.nextFollowUpAt || Date.parse(latest.nextFollowUpAt) > Date.parse(now))
+            continue;
+        const context = { lead, company: (input.crm.companies || []).find((c) => c.id === lead.companyId), contacts: (input.crm.contacts || []).filter((c) => lead.contactIds?.includes(c.id)), followup: latest };
+        add('crm-followup:' + latest.id, '客户跟进：' + (context.company?.name || lead.id), 'sales-feedback', '客户记录的下一次跟进已到期，请核对真实结果。', 1, null, [], latest.nextFollowUpAt, JSON.stringify(context));
     }
     for (const f of input.feedback) {
         if (typeof f.next === 'string' && f.next.trim()) {

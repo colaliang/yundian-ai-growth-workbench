@@ -146,3 +146,8 @@ node scripts/fe-smoke.mjs
 ```bash
 node scripts/fe-smoke.mjs --app yundian-ai-growth-workbench/app-v03.js
 ```
+## Runtime source parity (2026-10-09)
+
+`server.ts` is the runtime source; run `npm run build` to generate `server.js` and the complete source graph. Both entrypoints require `--root CUSTOMER_PROJECT`, default to port 8767 (or `PORT`), and accept `--port`. Local bind defaults to `127.0.0.1`; `--public` or `WORKBENCH_PUBLIC=1` enables `0.0.0.0`. Public bind is not owner authentication; CRM/publishing authentication remains a separate acceptance requirement.
+
+`/api/state` retains `token`, `projectRoot`, the existing public `cloud` configuration, and `kbCheck` (`ok`, `drift`, or `no-baseline`). Cloud configuration alone does not prove cloud connection or customer isolation. Runtime parity validation uses only temporary local projects and does not enable live cloud services.

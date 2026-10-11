@@ -26,3 +26,10 @@ description: Use when preparing or reviewing 社媒运营 work for B2B acquisiti
 安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。仅旧版无工作台元数据且非定时的未终结任务保留独立回写。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
 
 应用任务的已安装回写命令必须带 --application "实际工作台应用目录"（复制指令提供），并与任务位置匹配；不能把客户任务或产物指定的目录自动作为代码加载。Python 命令同样支持此参数。能力不足时停止登记。
+## 结构化计划与直接发布边界
+
+社媒任务产出 content-plan.json（schemaVersion=1、当前 workspaceId、items），字段与内容运营技能一致，sourceTaskId 必须指向真实当前任务。通过主技能真实 submit_result 管线回写，再由工作台受控导入；重复 ID 提示版本冲突。不得直接编辑客户 content-items 或伪造发布回执。
+
+本技能默认只生成草稿和计划。实际发布由工作台后端完成，当前版本需批准且客户逐次确认实际渠道/远端媒体/时间/数值积分预算。素材去 socialmedia.ydjia.com 网页上传，再刷新并关联当前账号 list_media 的真实 ID，本地路径不是远端 ID。API Key 不进入技能、指令、剪贴板或浏览器状态。
+
+逐渠道 published 才证明该渠道发布；partial、unknown、pending、scheduled 明确展示。actualCredits=null 不代表免费，保守预留不能冒充实际扣费。错误仅读取 get_post 核对，不自动重发或取消。旧远端排期必须保留并逐批确认仍存在。成果按真实 task.stage 归属，本社媒任务回执进入社媒成果，不能借用内容任务伪造社媒成果。
