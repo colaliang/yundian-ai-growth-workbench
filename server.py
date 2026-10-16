@@ -17,7 +17,22 @@ STAGES = ['market-research','product-opportunity','site-and-content','seo-geo','
 LOCK = Lock()
 TOKEN = secrets.token_urlsafe(32)
 
+def assert_node_unmanaged_root():
+    guidance = 'This historical Python backend cannot write a Node-managed customer root; use Node.js 22.18+ and scripts/workbench.mjs'
+    runtime = ROOT / '.workbench-runtime'
+    manifest = ROOT / 'growth-workspace' / 'workspace.json'
+    if runtime.exists() or runtime.is_symlink() or manifest.is_symlink():
+        raise ValueError(guidance)
+    if manifest.exists():
+        try:
+            value = json.loads(manifest.read_text(encoding='utf-8-sig'))
+        except (ValueError, UnicodeError, OSError):
+            raise ValueError('Invalid workspace manifest; ' + guidance) from None
+        if not isinstance(value, dict) or 'contractVersion' in value:
+            raise ValueError(guidance)
+
 def atomic(path, value):
+    assert_node_unmanaged_root()
     path.resolve().relative_to(ROOT)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
@@ -47,6 +62,7 @@ def skill_status():
     return result
 
 def install_skills():
+    assert_node_unmanaged_root()
     pairs=[(APP/'skills/registry.json',ROOT/'.codebuddy/skills/registry.json')]
     for folder in (APP/'skills').iterdir():
         if not folder.is_dir() or not (folder/'SKILL.md').is_file(): continue
@@ -60,6 +76,7 @@ def install_skills():
         target.resolve().relative_to(ROOT)
         if target.exists() and target.read_bytes()!=source.read_bytes(): raise ValueError('已有技能注册表不同，请先检查客户版本')
     for source,target in pairs:
+        assert_node_unmanaged_root()
         target.parent.mkdir(parents=True,exist_ok=True)
         if not target.exists(): shutil.copyfile(source,target)
 
@@ -94,7 +111,9 @@ def load():
     return state
 
 def save(body):
+    assert_node_unmanaged_root()
     with LOCK:
+        assert_node_unmanaged_root()
         current = load()
         if body.get('revision') != current['revision']: raise ValueError('资料已被其他操作更新，请刷新后重试')
         action, payload = body.get('action'), body.get('payload', {})
@@ -220,8 +239,10 @@ class Handler(BaseHTTPRequestHandler):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(); parser.add_argument('--root',required=True); parser.add_argument('--port',type=int,default=8767)
     args=parser.parse_args(); ROOT=Path(args.root).resolve(strict=True); PORT=args.port; BASE=ROOT/'growth-workspace'; DB=BASE/'workbench.json'
+    assert_node_unmanaged_root()
     spec=importlib.util.spec_from_file_location('init',APP/'skills/yundian-growth-workbench/scripts/init_workspace.py')
-    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.initialize(ROOT)
+    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    if not DB.exists(): module.initialize(ROOT)
     for child in ['workbench.json','knowledge','tasks','artifacts','workflows','feedback']:
         (BASE/child).resolve().relative_to(ROOT)
     print(f'WorkBuddy workbench: http://127.0.0.1:{PORT} | project: {ROOT}',flush=True)

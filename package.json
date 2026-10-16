@@ -8,14 +8,20 @@
   },
   "scripts": {
     "start": "node server.ts",
-    "test": "node --test tests/*.test.ts tests/*.test.mjs",
+    "test": "node --test --test-concurrency=1 tests/*.test.ts tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
+    "build:native": "node scripts/build-native.mjs",
     "setup": "node scripts/launch.mjs",
-    "package:skills": "node scripts/package-skills.mjs"
+    "package:skills": "node scripts/package-skills.mjs",
+    "sync:ui": "node scripts/sync-workbench-contract.mjs",
+    "check:ui": "node scripts/sync-workbench-contract.mjs --check",
+    "validate:skills": "node scripts/validate-skill-packages.mjs",
+    "verify:stability": "node scripts/verify-stability-browser.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "playwright": "1.62.1",
     "typescript": "^5.9.3"
   }
 }

@@ -1,0 +1,58 @@
+name: Working tree quality
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  quality:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.18.0
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run check:ui
+      - run: npm run typecheck
+      # Compile before the suite: integration exercises current server.js and CLI.
+      - run: npm run build
+      - run: npm test
+      - run: npm run package:skills
+      - run: node scripts/validate-skill-packages.mjs
+      - run: python -m pip install PyYAML==6.0.3
+      - uses: actions/checkout@v7
+        with:
+          repository: openai/skills
+          path: .quality-tools/openai-skills
+          sparse-checkout: skills/.system/skill-creator
+      - name: Validate every actual skill with official quick_validate
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess, sys
+          validator = Path('.quality-tools/openai-skills/skills/.system/skill-creator/scripts/quick_validate.py')
+          for entry in sorted(Path('skills').glob('*/SKILL.md')):
+              subprocess.run([sys.executable, '-X', 'utf8', str(validator), str(entry.parent)], check=True)
+          PY
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/verify-stability-browser.mjs
+        env:
+          WORKBENCH_BROWSER_EXECUTABLE: chromium
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: synthetic-evidence-${{ matrix.os }}
+          path: .superpowers/sdd/2026-10-13-e-stability-delivery-plan/e2-browser-evidence
+          if-no-files-found: warn
+          include-hidden-files: true
+
+
+

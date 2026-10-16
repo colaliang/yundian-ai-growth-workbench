@@ -61,6 +61,8 @@ npm run package:skills
 
 构建编译完整 `src/**/*.ts` 与 `server.ts`，入口保持 `server.js`；统一测试涵盖 `tests/*.test.ts` 和 `tests/*.test.mjs`，兼容测试需要 Python。开发和验收指南见[迁移与能力边界](docs/migration-v2.zh-CN.md)。客户运行本地服务不需要开发依赖。
 
+Linux 事务创建新目录需要在开发或镜像构建阶段执行 `npm run build:native`；`npm run build` 已包含此步骤。编译器仅构建时需要，运行包须包含目标平台辅助程序，详见[Linux 原子目录安装](docs/linux-directory-install.md)。
+
 本次是 **0.15.0 工作树构建**，未创建发布。`dist/skills-working-tree/` 生成17个独立 ZIP、1个总包及 `manifest.json`；每项记录技能声明版本、SHA-256、文件清单与 working-tree 标记，技能0.16.0声明不表示工作台0.16.0已发布。构建后选择[完整技能包](dist/skills-working-tree/yundian-growth-skills-v0.15.0-working-tree.zip)或[独立包目录](dist/skills-working-tree/)。同名定制技能不会被安装覆盖；更新官方内容必须先比较和保留客户版本。
 
 ## 公网展示与私有客户数据
@@ -82,3 +84,26 @@ npm run package:skills
 前端组件在 `web/views/`，领域、调度、技能和备份代码在 `src/`；扩展入口维护 registry、真实技能、输入/产物/验收及回写契约。迁移前完整预检并备份，失败保留原字节与目录树。详见[迁移说明](docs/migration-v2.zh-CN.md)、[统筹技能](skills/yundian-growth-workbench/SKILL.md)。代码与技能采用 [MIT](LICENSE)，名称和logo遵守[品牌说明](BRANDING.md)。
 
 项目内成果、专家入口、内容列表/排期/远端媒体关联、CRM跟进和所有者部署步骤见[模块工作台指南](docs/module-workspace-guide.zh-CN.md)。当前包为未发布工作树，真实发布需要客户确认正文、渠道、远端mediaId、时间和数值预算。
+
+<!-- workbench-ui:begin -->
+一级导航：工作台、企业知识库、营销推广、内容运营、客户管理、定时任务、设置。
+营销推广包含12个子项目，各占一行；内容运营只在一级出现。保留13个项目、15个执行阶段及历史SEO/GEO入口。
+免费项目：市场调研、产品机会、客户背调、销售反馈，无专家咨询窗口；其余项目页末按钮按需打开，二维码仍为占位，不自动发送客户资料。
+<!-- workbench-ui:end -->
+
+## 第一批工作台确认与 CRM 接线
+
+先读取当前客户项目的本地知识、来源和当前 contentHash；知识确认只表示客户确认这些字节，知识健康与任务 ready/needs-review/completed 分开。首次使用补全企业、产品、市场、买家、目标五项事实并确认当前知识后创建第一项任务；复制指令、安装文件和名单导入都不代表 WorkBuddy 实际执行。
+
+成员由客户提供真实项目名单，工作台 `/api/crm/members/import/preview` 预览并逐项决定，`/api/crm/members/import/confirm` 要求 confirmed:true。source 为 customer-import、verification 为 customer-confirmed，不能声称原生成员 API 自动同步。以稳定 ownerMemberId 关联负责人；同名不自动匹配，旧 owner 文本保留，停用成员不能新指派。
+
+公司、联系人、线索与下次跟进通过 `/api/crm/lead-records` 完整创建/编辑，输入分为 company、contacts、lead；客户确认 shared/source 修改后才写入。来源候选用 `/api/crm/import/preview` 预览，客户逐项确认 create/skip/link-existing 后入库；保留来源、外部 sourceLeadId 与内部稳定 crmLeadId，不由 AI 自动合并或生成真实联系人。以上 API 均沿用所有者认证、客户 workspaceId、当前 revision 和工作区令牌；遇到 401/409 保留输入，重新认证或核对后由客户明确保存，不自动重提交。
+
+列表和 `/api/crm/export` 采用同一组合筛选：公司/联系人查询、国家、来源、阶段、标签、负责人、跟进日期。selected 只导出当前筛选内明确勾选 ID，filtered 导出全部筛选结果而非当前分页；客户确认字段/范围后下载真实 UTF-8 BOM CSV，长电话与公式文本安全保存。销售反馈由真实客户记录并明确关联当前线索后进入下一轮，名单数量、背调预测和草稿不代表成交。
+
+普通快照仅覆盖 growth-workspace；客户 `.codebuddy/skills` 全目录、外部附件和工作区外产物须另行备份。官方安装核对 SKILL.md 及所需资源/共享脚本，任何同名不同字节的定制文件都保留，先独立暂存官方版本并审阅。应用 0.15.0、现有技能 0.16.0 的本次交付为 working-tree、published:false；未创建正式发布或部署。原生宿主执行、成员 API、云同步、真实发布与付费效果均待真实授权和回执验证。
+
+
+稳定化开发验收与客户升级预检见 [stability-acceptance.zh-CN.md](docs/stability-acceptance.zh-CN.md)。CRM 5000 条交互容量门槛仍未通过；本地工程检查不代表生产或云端已验收。
+
+工程复核：`npm ci` → `npm run check:ui` → `npm run typecheck` → `npm run build` → `npm test` → `npm run package:skills` → `npm run validate:skills`。先编译再跑集成测试，避免使用陈旧 server.js。`npm run verify:stability` 使用本机 Edge；`WORKBENCH_BROWSER_EXECUTABLE=chromium` 使用 Playwright 管理的 Chromium，也可设置实际浏览器可执行文件绝对路径。所有浏览器资料均在临时合成客户中，不使用当前客户实例。

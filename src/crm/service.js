@@ -1,6 +1,6 @@
+import { buildCrmReadContext } from "./read-context.js";
 import crypto from 'node:crypto';
 import path from 'node:path';
-import fs from 'node:fs';
 import { crmFamilies, stages, validId, normalize, validateCrmDataset } from "./validation.js";
 const id = () => crypto.randomUUID().replaceAll('-', '');
 const now = () => new Date().toISOString();
@@ -11,28 +11,35 @@ export class CrmService {
     store;
     workspaceId;
     previews = new Map();
-    constructor(store) { this.store = store; this.workspaceId = store.json(path.join(store.base, 'workspace.json')).workspaceId; }
-    dataset() { const rows = [...crmFamilies, 'tasks', 'artifacts', 'feedback', 'records'].flatMap(family => this.store.files(family, '.json').map(file => ({ family, filename: path.basename(file), value: this.store.json(file) }))); validateCrmDataset(rows, this.workspaceId); return rows; }
+    readRows;
+    readIndex;
+    constructor(store, readRows) { this.readRows = readRows; this.store = store; this.workspaceId = store.json(path.join(store.base, 'workspace.json')).workspaceId; }
+    static readSnapshot(store) { const service = new CrmService(store); return new CrmService(store, service.dataset()); }
+    dataset() { if (this.readRows)
+        return this.readRows; const rows = [...crmFamilies, 'tasks', 'artifacts', 'feedback', 'records'].flatMap(family => this.store.files(family, '.json').map(file => ({ family, filename: path.basename(file), value: this.store.json(file) }))); validateCrmDataset(rows, this.workspaceId); return rows; }
     fingerprint() { const digest = this.store.digest; if (digest)
         return digest.call(this.store); return crypto.createHash('sha256').update(JSON.stringify(this.dataset())).digest('hex'); }
+    index(rows) { if (this.readRows && this.readIndex)
+        return this.readIndex; const family = (name) => rows.filter(r => r.family === name).map(r => r.value); const index = buildCrmReadContext({ companies: family('crm-companies'), contacts: family('crm-contacts'), leads: family('crm-leads'), followups: family('crm-followups'), members: family('crm-members') }); if (this.readRows)
+        this.readIndex = index; return index; }
     list(family, filter = {}) {
         if (filter.stage && !stages.includes(filter.stage))
             throw Error('Invalid stage');
         if (filter.companyId && !validId(filter.companyId) || filter.leadId && !validId(filter.leadId))
             throw Error('Invalid filter');
-        const all = this.dataset();
+        const all = this.dataset(), index = this.index(all);
         const dueIds = new Set();
         if (family === 'crm-followups' && truth(filter.overdue)) {
-            for (const { value: lead } of all.filter(r => r.family === 'crm-leads')) {
-                const company = all.find(r => r.family === 'crm-companies' && r.value.id === lead.companyId)?.value;
+            for (const lead of index.originalData.leads) {
+                const company = index.companiesById.get(lead.companyId);
                 if (lead.archivedAt || company?.archivedAt || ['won', 'lost'].includes(lead.stage))
                     continue;
-                const latest = all.filter(r => r.family === 'crm-followups' && r.value.leadId === lead.id && r.value.kind === 'followup' && !r.value.archivedAt).map(r => r.value).sort((a, b) => b.time.localeCompare(a.time) || b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0];
+                const latest = index.latestFollowupByLead.get(lead.id);
                 if (latest?.nextFollowUpAt && latest.nextFollowUpAt <= now())
                     dueIds.add(latest.id);
             }
         }
-        return all.filter(r => r.family === family).map(r => r.value).filter(v => (truth(filter.includeArchived) || !v.archivedAt) && (!filter.query || JSON.stringify(v).toLowerCase().includes(filter.query.toLowerCase())) && (!filter.owner || v.owner === filter.owner) && (!filter.stage || v.stage === filter.stage) && (!filter.companyId || v.companyId === filter.companyId) && (!filter.leadId || v.leadId === filter.leadId) && (!filter.country || (v.country ?? all.find(r => r.family === 'crm-companies' && r.value.id === v.companyId)?.value.country) === filter.country) && (!truth(filter.overdue) || family === 'crm-followups' && dueIds.has(v.id)));
+        return all.filter(r => r.family === family).map(r => r.value).filter(v => (truth(filter.includeArchived) || !v.archivedAt) && (!filter.query || JSON.stringify(v).toLowerCase().includes(filter.query.toLowerCase())) && (!filter.owner || v.owner === filter.owner) && (!filter.stage || v.stage === filter.stage) && (!filter.companyId || v.companyId === filter.companyId) && (!filter.leadId || v.leadId === filter.leadId) && (!filter.country || (v.country ?? index.companiesById.get(v.companyId)?.country) === filter.country) && (!truth(filter.overdue) || family === 'crm-followups' && dueIds.has(v.id)));
     }
     listCompanies(f = {}) { return this.list('crm-companies', f); }
     listContacts(f = {}) { return this.list('crm-contacts', f); }
@@ -41,7 +48,12 @@ export class CrmService {
     get(family, entityId) { if (!validId(entityId))
         throw Error('Invalid CRM ID'); const v = this.dataset().find(r => r.family === family && r.value.id === entityId)?.value; if (!v)
         throw Error('CRM record not found'); return v; }
-    crmLeadContext(entityId) { const lead = this.get('crm-leads', entityId), company = this.get('crm-companies', lead.companyId); const contacts = lead.contactIds.map(id => this.get('crm-contacts', id)), followups = this.listFollowUps({ leadId: entityId, includeArchived: true }); const tasks = this.dataset().filter(r => r.family === 'tasks' && r.value.sourceLeadId === lead.id).map(r => r.value); const artifactIds = [...new Set([...followups.flatMap(f => f.artifactIds), ...tasks.flatMap(t => t.artifactIds || [])])]; return { lead, company, contacts, followups, artifactIds, tasks }; }
+    crmLeadContext(entityId) { if (!validId(entityId))
+        throw Error('Invalid CRM ID'); const all = this.dataset(), index = this.index(all), lead = index.originalData.leads.find(l => l.id === entityId); if (!lead)
+        throw Error('CRM record not found'); const company = index.companiesById.get(lead.companyId); if (!company)
+        throw Error('CRM record not found'); const contacts = lead.contactIds.map(id => { if (!validId(id))
+        throw Error('Invalid CRM ID'); const contact = index.contactsById.get(id); if (!contact)
+        throw Error('CRM record not found'); return contact; }), followups = index.originalData.followups.filter(f => f.leadId === entityId), tasks = all.filter(r => r.family === 'tasks' && r.value.sourceLeadId === lead.id).map(r => r.value); const artifactIds = [...new Set([...followups.flatMap(f => f.artifactIds), ...tasks.flatMap(t => t.artifactIds || [])])]; return { lead, company, contacts, followups, artifactIds, tasks }; }
     linkFeedback(feedbackId, crmLeadId) { this.active('crm-leads', crmLeadId); const rows = this.dataset(); if (!rows.some(r => r.family === 'feedback' && r.value.id === feedbackId))
         throw Error('Feedback not found'); const old = rows.find(r => r.family === 'crm-feedback-links' && r.value.feedbackId === feedbackId); if (old) {
         if (old.value.crmLeadId !== crmLeadId)
@@ -53,30 +65,15 @@ export class CrmService {
             throw Error('Unsupported or server-owned field ' + key); return normalized; }
     base() { const time = now(); return { id: id(), workspaceId: this.workspaceId, createdAt: time, updatedAt: time, archivedAt: null }; }
     commit(jobs) {
+        if (this.readRows)
+            throw Error('CRM read snapshot cannot mutate');
         const rows = this.dataset();
         const merged = new Map(rows.map(r => [r.family + '/' + r.filename, r]));
         for (const row of jobs)
             merged.set(row.family + '/' + row.filename, row);
         validateCrmDataset([...merged.values()], this.workspaceId);
-        const originals = new Map();
-        try {
-            for (const row of jobs) {
-                const file = this.store.checked(path.join(this.store.base, row.family, row.filename));
-                originals.set(file, fs.existsSync(file) ? fs.readFileSync(file) : null);
-                this.store.put(file, row.value);
-            }
-        }
-        catch (e) {
-            for (const [file, bytes] of originals) {
-                if (bytes === null) {
-                    if (fs.existsSync(file))
-                        fs.unlinkSync(file);
-                }
-                else
-                    this.store.write(file, bytes.toString('utf8'));
-            }
-            throw e;
-        }
+        for (const row of jobs)
+            this.store.put(this.store.checked(path.join(this.store.base, row.family, row.filename)), row.value);
     }
     row(family, value) { return { family, filename: value.id + '.json', value }; }
     createCompany(input) { const value = { ...this.input('crm-companies', input), ...this.base() }; this.commit([this.row('crm-companies', value)]); return value; }
@@ -87,16 +84,21 @@ export class CrmService {
     updateContact(entityId, input) { const old = this.get('crm-contacts', entityId); if (Object.hasOwn(input, 'companyId') && input.companyId !== old.companyId)
         throw Error('Create a sourced contact for a new company relationship'); return this.update('crm-contacts', entityId, input); }
     update(family, entityId, input) { if (!input || typeof input !== 'object' || Array.isArray(input))
-        throw Error('Missing structured CRM patch'); const old = this.get(family, entityId); this.input(family, { ...normalize(family, old), ...input }); const value = { ...old, ...input, updatedAt: now() }; this.commit([this.row(family, value)]); return value; }
+        throw Error('Missing structured CRM patch'); if (Object.hasOwn(input, 'entityVersion'))
+        throw Error('Server-owned entityVersion'); const old = this.get(family, entityId); this.input(family, { ...normalize(family, old), ...input }); const value = { ...old, ...input, updatedAt: now() }; this.commit([this.row(family, value)]); return value; }
     archiveEntity(kind, entityId) { const family = kind === 'company' ? 'crm-companies' : kind === 'contact' ? 'crm-contacts' : kind === 'lead' ? 'crm-leads' : ''; if (!family)
         throw Error('Invalid archive kind'); const value = this.get(family, entityId); this.commit([this.row(family, { ...value, archivedAt: now(), updatedAt: now() })]); }
-    createLead(input) { const n = this.input('crm-leads', input); this.active('crm-companies', n.companyId); for (const contactId of n.contactIds) {
+    resolveOwner(ownerMemberId, old) { if (ownerMemberId === null)
+        return ''; const member = this.get('crm-members', ownerMemberId); if ((!member.active || member.archivedAt) && old?.ownerMemberId !== ownerMemberId)
+        throw Error('Member inactive'); return member.name; }
+    createLead(input) { const n = this.input('crm-leads', input); if (Object.hasOwn(n, 'ownerMemberId'))
+        n.owner = this.resolveOwner(n.ownerMemberId); this.active('crm-companies', n.companyId); for (const contactId of n.contactIds) {
         const c = this.active('crm-contacts', contactId);
         if (c.companyId !== n.companyId)
             throw Error('Contact belongs to another company');
     } const value = { ...n, ...this.base(), stage: 'new', sourceLinks: [] }; this.commit([this.row('crm-leads', value)]); return value; }
-    updateLead(entityId, patch) { if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).some(k => !['stage', 'owner', 'tags', 'productInterests'].includes(k)))
-        throw Error('Invalid lead patch'); const old = this.get('crm-leads', entityId); const value = { ...old, ...patch, updatedAt: now() }; const jobs = [this.row('crm-leads', value)]; if (patch.stage && patch.stage !== old.stage) {
+    updateLead(entityId, patch) { if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).some(k => !['stage', 'owner', 'ownerMemberId', 'tags', 'productInterests'].includes(k)))
+        throw Error('Invalid lead patch'); const old = this.get('crm-leads', entityId); const ownerPatch = Object.hasOwn(patch, 'ownerMemberId') ? { owner: this.resolveOwner(patch.ownerMemberId, old) } : old.ownerMemberId && Object.hasOwn(patch, 'owner') ? { owner: this.resolveOwner(old.ownerMemberId, old) } : {}; const value = { ...old, ...patch, ...ownerPatch, updatedAt: now() }; const jobs = [this.row('crm-leads', value)]; if (patch.stage && patch.stage !== old.stage) {
         const event = { ...normalize('crm-followups', { leadId: entityId, time: now(), method: 'stage-change', content: 'Customer changed stage: ' + old.stage + ' → ' + patch.stage }), ...this.base(), kind: 'stage-change', fromStage: old.stage, toStage: patch.stage };
         jobs.push(this.row('crm-followups', event));
     } this.commit(jobs); return value; }
@@ -117,6 +119,8 @@ export class CrmService {
                 if (raw.lead.companyId !== undefined || raw.lead.contactIds !== undefined)
                     throw Error('Import lead parents are supplied by row');
                 const lead = this.input('crm-leads', { ...raw.lead, companyId: temporary });
+                if (Object.hasOwn(lead, 'ownerMemberId'))
+                    lead.owner = this.resolveOwner(lead.ownerMemberId);
                 const candidate = { candidateId: id(), company, contacts, lead };
                 const stagedCompany = { ...company, ...this.base(), id: temporary };
                 const stagedContacts = contacts.map((v) => ({ ...v, ...this.base() }));
@@ -176,6 +180,8 @@ export class CrmService {
             const contacts = c.contacts.map(input => ({ ...normalize('crm-contacts', { ...input, companyId: company.id }), ...this.base() }));
             jobs.push(...contacts.map(v => this.row('crm-contacts', v)));
             const lead = { ...normalize('crm-leads', { ...c.lead, companyId: company.id, contactIds: contacts.map(v => v.id) }), ...this.base(), stage: 'new', sourceLinks: [] };
+            if (Object.hasOwn(lead, 'ownerMemberId'))
+                lead.owner = this.resolveOwner(lead.ownerMemberId);
             jobs.push(this.row('crm-leads', lead));
             result.push(lead);
         }

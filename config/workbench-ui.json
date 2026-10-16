@@ -1,0 +1,52 @@
+{
+  "navigation": [
+    [
+      "overview",
+      "工作台"
+    ],
+    [
+      "knowledge",
+      "企业知识库"
+    ],
+    [
+      "skills",
+      "营销推广"
+    ],
+    [
+      "content-operations",
+      "内容运营"
+    ],
+    [
+      "crm",
+      "客户管理"
+    ],
+    [
+      "schedules",
+      "定时任务"
+    ],
+    [
+      "settings",
+      "设置"
+    ]
+  ],
+  "promotionModuleIds": [
+    "market-research",
+    "product-opportunity",
+    "site-and-content",
+    "seo-geo",
+    "acquisition",
+    "buyer-check",
+    "sales-feedback",
+    "next-cycle",
+    "social-media",
+    "facebook-ads",
+    "google-ads",
+    "email-outreach"
+  ],
+  "freeModuleIds": [
+    "market-research",
+    "product-opportunity",
+    "buyer-check",
+    "sales-feedback"
+  ]
+}

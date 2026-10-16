@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import fs from 'node:fs';
 const statuses = ['idea', 'draft', 'ready', 'scheduled', 'publishing', 'published', 'partial', 'failed', 'unknown'];
 const types = ['post', 'article', 'video', 'image', 'carousel', 'email', 'short-video', 'text'];
 const fields = ['title', 'productRef', 'purpose', 'contentType', 'language', 'keywords', 'text', 'assetRefs', 'remoteMediaIds', 'channelIds', 'plannedAt', 'timezone', 'cycleId', 'sourceTaskId'];
@@ -24,7 +23,8 @@ catch {
     throw Error('Invalid timezone');
 } if (out.sourceTaskId !== null && (typeof out.sourceTaskId !== 'string' || !out.sourceTaskId))
     throw Error('Invalid sourceTaskId'); return out; }
-export function validateContentRecord(value, workspaceId) { if (!value || typeof value !== 'object' || Array.isArray(value) || fields.some(field => !Object.hasOwn(value, field)))
+export function validateContentRecord(value, workspaceId) { if (value?.entityVersion !== undefined && (!Number.isSafeInteger(value.entityVersion) || value.entityVersion < 0))
+    throw Error('Invalid entity version'); if (!value || typeof value !== 'object' || Array.isArray(value) || fields.some(field => !Object.hasOwn(value, field)))
     throw Error('Missing required persisted content field'); const input = normalizeContent(value); if (value.workspaceId !== workspaceId || typeof value.id !== 'string' || !/^\w[\w-]{0,127}$/.test(value.id) || !Number.isInteger(value.contentRevision) || value.contentRevision < 1 || !statuses.includes(value.status) || !['pending', 'approved', 'rejected'].includes(value.reviewStatus) || value.contentHash !== hashContent(input) || !Array.isArray(value.publishAttemptIds) || value.publishAttemptIds.some((x) => typeof x !== 'string') || (value.publisherPostId !== null && typeof value.publisherPostId !== 'string'))
     throw Error('Invalid content record'); date(value.createdAt); date(value.updatedAt); if (value.archivedAt !== null)
     date(value.archivedAt); if (value.approvedHash !== null && value.approvedHash !== value.contentHash || value.reviewStatus === 'approved' && value.approvedHash !== value.contentHash || value.reviewStatus !== 'approved' && value.approvedHash !== null)
@@ -67,7 +67,7 @@ export class ContentService {
             date(filters[k]); return this.store.files('content-items', '.json').map(f => validateContentRecord(this.store.json(f), this.workspaceId)).filter(x => (filters.includeArchived || !x.archivedAt) && (!filters.productRef || x.productRef === filters.productRef) && (!filters.status || x.status === filters.status) && (!filters.channelId || x.channelIds.includes(filters.channelId)) && (!filters.from || !!x.plannedAt && x.plannedAt >= filters.from) && (!filters.to || !!x.plannedAt && x.plannedAt <= filters.to)); }
     get(itemId) { const item = this.list({ includeArchived: true }).find(x => x.id === itemId); if (!item)
         throw Error('Content not found'); return item; }
-    input(input) { for (const k of ['id', 'workspaceId', 'status', 'approvedHash', 'reviewStatus', 'contentRevision'])
+    input(input) { for (const k of ['id', 'workspaceId', 'status', 'approvedHash', 'reviewStatus', 'contentRevision', 'entityVersion'])
         if (Object.hasOwn(input, k))
             throw Error('Server-owned field ' + k); const n = normalizeContent(input); if (n.sourceTaskId && !this.store.files('tasks', '.json').some(f => { const t = this.store.json(f); return t.id === n.sourceTaskId && t.workspaceId === this.workspaceId; }))
         throw Error('Source task not found in workspace'); for (const ref of n.assetRefs) {
@@ -139,13 +139,8 @@ export class ContentService {
         if (d.action === 'apply-new')
             result.push(this.update(c.existingId, c.input, c.expectedRevision));
         else {
-            let item = this.create(c.input);
-            if (c.existingId) {
-                const generated = path.join(this.store.base, 'content-items', item.id + '.json');
-                item = { ...item, id: c.existingId };
-                this.write(item);
-                fs.unlinkSync(generated);
-            }
+            const n = this.input(c.input), now = new Date().toISOString();
+            const item = this.write({ ...n, id: c.existingId ?? id(), workspaceId: this.workspaceId, contentRevision: 1, reviewStatus: 'pending', approvedHash: null, contentHash: hashContent(n), status: 'draft', publisherPostId: null, publishAttemptIds: [], createdAt: now, updatedAt: now, archivedAt: null });
             result.push(item);
         }
     } this.previews.delete(previewId); return result; }

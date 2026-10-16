@@ -1,5 +1,17 @@
+import { inspectLease } from "./src/storage/lease.js";
+import { planFromWorkspace } from "./src/backup/scheduler.js";
+import { knowledgeFiles, loadKnowledgeMetadata, saveKnowledgeMetadata, knowledgeDetails } from "./src/domain/knowledge-metadata.js";
+import { queryCrmPage, crmScopeId, crmSummary, queryEditorOptions, queryCrmFunnel, pageRows } from "./src/crm/page.js";
+import { readBackupPlan, setBackupPlan, tickBackup } from "./src/backup/scheduler.js";
+import { previewBackupPrune, confirmBackupPrune } from "./src/backup/retention.js";
+import { exportFullBackup, previewFullRestore, confirmFullRestore } from "./src/backup/bundle.js";
+import { LoginLimiter, clientAddress, trustedProxySocket } from "./src/auth/rate-limit.js";
+import { readInstanceConfig, resolveInstance, instanceMetadata, previewLegacyConfigMigration, confirmLegacyConfigMigration } from "./src/runtime/instance.js";
+import { projectCrmRows } from "./src/crm/query.js";
+import { exportCrmCsv, selectExportRows } from "./src/crm/export.js";
+import { LeadRecordService } from "./src/crm/lead-record.js";
+import { MemberService } from "./src/crm/members.js";
 import { CrmService } from "./src/crm/service.js";
-import { crmFamilies } from "./src/crm/validation.js";
 import { PublicationService } from "./src/publishing/service.js";
 import { McpPublisher } from "./src/publishing/mcp-client.js";
 import { ContentService } from "./src/content/service.js";
@@ -13,9 +25,11 @@ import { dailyContext, recommendDaily } from "./src/domain/daily-actions.js";
 import { createTask as newTask, applyReceipt as validateReceipt } from "./src/domain/tasks.js";
 import { safeArtifactUrl, contentHash, inspectArtifact, reviewArtifact as newReview } from "./src/domain/artifacts.js";
 import { knowledgeEntry } from "./src/domain/knowledge.js";
+import { summarizeKnowledgeHealth } from "./src/domain/knowledge-health.js";
 import { loadSkills, buildInvocation } from "./src/skills/catalog.js";
 import { WorkspaceStore } from "./src/storage/workspace-store.js";
-import { migrateWorkspace } from "./src/storage/migrate.js";
+import { computeWorkspaceRevision } from "./src/storage/revision.js";
+import { openFileWorkspace, runWorkspaceMutation, readWorkspaceSnapshot, committedResult } from "./src/runtime/workspace.js";
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -50,15 +64,21 @@ export function parseRuntimeOptions(argv, env) {
     const port = Number(argv.includes('--port') ? option('--port') : env.PORT ?? 8767);
     if (!Number.isInteger(port) || port < 1 || port > 65535)
         throw Error('Invalid port');
-    return { projectRoot, port, publicMode: publicMode(argv, env) };
+    const privateBase = argv.includes('--private-base') ? option('--private-base') : env.WORKBENCH_PRIVATE_BASE;
+    if (argv.includes('--private-base') && privateBase === undefined || privateBase !== undefined && (!privateBase || privateBase.startsWith('--')))
+        throw Error('Invalid private base');
+    const legacyPrivateBase = argv.includes('--legacy-private-base') ? option('--legacy-private-base') : env.WORKBENCH_LEGACY_PRIVATE_BASE;
+    if (argv.includes('--legacy-private-base') && legacyPrivateBase === undefined || legacyPrivateBase !== undefined && (!legacyPrivateBase || legacyPrivateBase.startsWith('--')))
+        throw Error('Invalid legacy private base');
+    return { projectRoot, port, publicMode: publicMode(argv, env), ...(privateBase === undefined ? {} : { privateBase }), ...(legacyPrivateBase === undefined ? {} : { legacyPrivateBase }) };
 }
 function knowledgeCheck(store) {
     try {
         const manifest = JSON.parse(fs.readFileSync(path.join(APP, '.sync-manifest.json'), 'utf8'));
         const names = Object.keys(manifest).filter(file => file.endsWith('.md'));
         const kbDir = path.join(store.base, 'knowledge');
-        const drifted = names.filter(file => { const target = path.join(kbDir, file); return !fs.existsSync(target) || crypto.createHash('sha1').update(fs.readFileSync(target)).digest('hex') !== manifest[file]; });
-        const present = fs.existsSync(kbDir) ? fs.readdirSync(kbDir).filter(file => file.endsWith('.md')).length : 0;
+        const drifted = names.filter(file => { const target = path.join(kbDir, file); return !store.exists(target) || crypto.createHash('sha1').update(store.readBytes(target)).digest('hex') !== manifest[file]; });
+        const present = store.exists(kbDir) ? store.listDirectory(kbDir).filter(entry => entry.name.endsWith('.md')).length : 0;
         return { status: drifted.length ? 'drift' : 'ok', total: names.length, present, drifted, at: manifest.__at || null };
     }
     catch {
@@ -85,7 +105,7 @@ const loadCloudConfig = () => {
     return null;
 };
 export class FileWorkspace extends WorkspaceStore {
-    constructor(root) { super(root); migrateWorkspace(root); this.initialize(); migrateWorkspace(root); }
+    constructor(root) { super(root); }
     initialize() {
         const templates = JSON.parse(fs.readFileSync(path.join(APP, 'workspace-defaults.json'), 'utf8'));
         const workspace = JSON.parse(templates['workspace.json']);
@@ -94,17 +114,9 @@ export class FileWorkspace extends WorkspaceStore {
         templates['workspace.json'] = JSON.stringify(workspace, null, 2) + '\n';
         const pairs = Object.entries(templates).map(([rel, value]) => [this.checked(path.join(this.base, rel)), value]);
         for (const [file, value] of pairs) {
-            fs.mkdirSync(path.dirname(file), { recursive: true });
-            try {
-                fs.writeFileSync(file, value, { flag: 'wx' });
-            }
-            catch (e) {
-                if (e.code !== 'EEXIST')
-                    throw e;
-            }
+            if (!this.exists(file))
+                this.write(file, value);
         }
-        for (const name of ['tasks', 'artifacts', 'workflows', 'feedback', 'records', 'audits', ...crmFamilies])
-            fs.mkdirSync(this.checked(path.join(this.base, name)), { recursive: true });
     }
     registry() { return JSON.parse(fs.readFileSync(path.join(APP, 'skills/registry.json'), 'utf8')); }
     skills() {
@@ -131,39 +143,23 @@ export class FileWorkspace extends WorkspaceStore {
             if (ent.isDirectory() && fs.existsSync(path.join(APP, 'skills', ent.name, 'SKILL.md')))
                 walk(path.join(APP, 'skills', ent.name), path.join(this.root, '.codebuddy/skills', ent.name));
         for (const [src, dst] of pairs)
-            if (fs.existsSync(this.checked(dst)) && !fs.readFileSync(src).equals(fs.readFileSync(dst)))
+            if (this.exists(this.checked(dst)) && !fs.readFileSync(src).equals(this.readBytes(dst)))
                 throw Error('已有同名技能内容不同，保留客户版本；请按新包 manifest 的版本和 SHA-256 比较，先在独立官方版本目录暂存并审阅差异，再选择版本或合并，不覆盖客户定制');
         for (const [src, dst] of pairs)
-            if (!fs.existsSync(dst))
+            if (!this.exists(dst))
                 this.write(dst, fs.readFileSync(src, 'utf8'));
     }
-    digest() {
-        const files = [path.join(this.base, 'workbench.json'), ...this.files('tasks', '.json'), ...this.files('artifacts', '.md'), ...this.files('artifacts', '.json'), ...this.files('reviews', '.json'), ...this.files('receipts', '.json'), ...this.files('knowledge-confirmations', '.json'), ...this.files('knowledge', '.md'), ...this.files('records', '.json'), ...this.files('audits', '.json'), ...this.files('daily-decisions', '.json'), ...this.files('schedules', '.json'), ...this.files('schedule-occurrences', '.json'), ...this.files('delivery-programs', '.json'), ...this.files('content-items', '.json'), ...this.files('publish-attempts', '.json'), ...this.files('publish-confirmations', '.json'), ...crmFamilies.flatMap(f => this.files(f, '.json'))].sort();
-        const h = crypto.createHash('sha256');
-        for (const file of files)
-            if (fs.existsSync(this.checked(file)))
-                h.update(path.relative(this.base, file)).update(fs.readFileSync(file));
-        for (const f of this.files('artifacts', '.json')) {
-            const a = this.json(f);
-            if (a.path) {
-                try {
-                    h.update(a.path).update(fs.readFileSync(this.checked(path.resolve(this.root, a.path))));
-                }
-                catch {
-                    h.update('missing:' + a.path);
-                }
-            }
-        }
-        return h.digest('hex');
-    }
-    load() {
+    digest() { return computeWorkspaceRevision(this); }
+    load(crmSnapshot) {
+        if (crmSnapshot && crmSnapshot.store !== this)
+            throw Error('CRM snapshot belongs to another workspace reader');
         const db = path.join(this.base, 'workbench.json');
-        const state = fs.existsSync(db) ? this.json(db) : { profile: {}, tasks: [], feedback: [] };
+        const state = this.exists(db) ? this.json(db) : { profile: {}, tasks: [], feedback: [] };
         state.tasks = this.files('tasks', '.json').map(f => this.json(f)).filter(t => SUPPORTED_STAGES.includes(t.stage) && validId(t.id)).map(t => {
             const file = this.checked(path.join(this.base, 'artifacts', t.id + '.md'));
-            if (!t.workspaceId && !t.inputSnapshotRef && !t.applicationRoot && !t.scheduleId && fs.existsSync(file)) {
+            if (!t.workspaceId && !t.inputSnapshotRef && !t.applicationRoot && !t.scheduleId && this.exists(file)) {
                 t.artifact = path.relative(this.base, file);
-                if (!['blocked', 'needs-input', 'failed', 'cancelled'].includes(t.status) && (t.status !== 'completed' || t.reviewedHash !== sha(fs.readFileSync(file))))
+                if (!['blocked', 'needs-input', 'failed', 'cancelled'].includes(t.status) && (t.status !== 'completed' || t.reviewedHash !== sha(this.readBytes(file))))
                     t.status = 'needs-review';
             }
             return t;
@@ -177,8 +173,8 @@ export class FileWorkspace extends WorkspaceStore {
         } });
         for (const t of state.tasks) {
             const file = this.checked(path.join(this.base, 'artifacts', t.id + '.md'));
-            if (!t.workspaceId && !t.inputSnapshotRef && !t.applicationRoot && !t.scheduleId && fs.existsSync(file) && !state.artifacts.some((a) => a.taskId === t.id && a.path === path.relative(this.root, file))) {
-                state.artifacts.push({ id: t.id, workspaceId: state.workspace.workspaceId, taskId: t.id, module: t.stage, skillVersion: t.skillVersion || 'legacy', inputSnapshotRef: t.inputSnapshotRef || '', path: path.relative(this.root, file), summary: t.name, sources: [], gaps: ['历史文件，执行来源未核验'], nextSteps: [], executedAt: null, verification: 'unverified', contentHash: contentHash(fs.readFileSync(file)), executor: 'legacy' });
+            if (!t.workspaceId && !t.inputSnapshotRef && !t.applicationRoot && !t.scheduleId && this.exists(file) && !state.artifacts.some((a) => a.taskId === t.id && a.path === path.relative(this.root, file))) {
+                state.artifacts.push({ id: t.id, workspaceId: state.workspace.workspaceId, taskId: t.id, module: t.stage, skillVersion: t.skillVersion || 'legacy', inputSnapshotRef: t.inputSnapshotRef || '', path: path.relative(this.root, file), summary: t.name, sources: [], gaps: ['历史文件，执行来源未核验'], nextSteps: [], executedAt: null, verification: 'unverified', contentHash: contentHash(this.readBytes(file)), executor: 'legacy' });
             }
         }
         state.reviews = this.files('reviews', '.json').map(f => this.json(f)).map(r => ({ ...r, valid: state.artifacts.some((a) => a.id === r.artifactId && a.contentHash === r.contentHash && a.contentHash !== null) }));
@@ -197,12 +193,14 @@ export class FileWorkspace extends WorkspaceStore {
                 t.status = all && ['completed', 'needs-review'].includes(t.status) ? 'completed' : (t.status === 'completed' || t.status === 'needs-review') ? 'needs-review' : t.status;
             }
         }
-        const crm = new CrmService(this);
-        state.crm = { companies: crm.listCompanies({ includeArchived: true }), contacts: crm.listContacts({ includeArchived: true }), leads: crm.listLeads({ includeArchived: true }), followups: crm.listFollowUps({ includeArchived: true }), feedbackLinks: crm.list('crm-feedback-links', {}) };
+        const crm = crmSnapshot ?? CrmService.readSnapshot(this);
+        state.crm = { members: crm.list('crm-members', { includeArchived: true }), companies: crm.listCompanies({ includeArchived: true }), contacts: crm.listContacts({ includeArchived: true }), leads: crm.listLeads({ includeArchived: true }), followups: crm.listFollowUps({ includeArchived: true }), feedbackLinks: crm.list('crm-feedback-links', {}) };
         state.serviceCatalog = deliveryCatalog();
         state.deliveryPrograms = this.files('delivery-programs', '.json').map(f => this.json(f)).filter(p => p.workspaceId === state.workspace.workspaceId).map(p => { const progress = deliveryProgress(p, state.tasks, state.artifacts, state.reviews); return { ...p, artifactIds: progress.artifactIds, progress }; });
         const confirmations = this.files('knowledge-confirmations', '.json').map(f => this.json(f));
-        state.knowledge = this.files('knowledge', '.md').map(f => knowledgeEntry(path.relative(this.base, f), this.read(f), state.workspace.workspaceId, confirmations.find(c => c.path === path.relative(this.base, f))));
+        const knowledgeMetadata = loadKnowledgeMetadata(this);
+        state.knowledge = knowledgeFiles(this).map(f => ({ ...knowledgeEntry(path.relative(this.base, f), this.read(f), state.workspace.workspaceId, confirmations.find(c => c.path === path.relative(this.base, f))), ...knowledgeDetails(this, path.relative(this.base, f), knowledgeMetadata) }));
+        state.knowledgeHealth = summarizeKnowledgeHealth(state.knowledge, this.root, new Date().toISOString());
         state.records = this.files('records', '.json').map(f => this.json(f));
         state.audits = this.files('audits', '.json').map(f => ({ id: path.basename(f, '.json'), ...this.json(f) }));
         state.dailyDecisions = this.files('daily-decisions', '.json').reduce((all, f) => { const row = this.json(f); if (row.workspaceId === state.workspace.workspaceId)
@@ -210,6 +208,12 @@ export class FileWorkspace extends WorkspaceStore {
         state.schedules = this.files('schedules', '.json').map(f => this.json(f)).filter(s => s.workspaceId === state.workspace.workspaceId);
         state.scheduleOccurrences = this.files('schedule-occurrences', '.json').map(f => this.json(f)).filter(s => s.workspaceId === state.workspace.workspaceId);
         const taskReceipts = this.files('receipts', '.json').map(f => this.json(f));
+        for (const task of state.tasks) {
+            const r = task.latestReceiptKey && taskReceipts.find((r) => r.workspaceId === state.workspace.workspaceId && r.taskId === task.id && r.receiptKey === task.latestReceiptKey);
+            delete task.executionReceipt;
+            if (r?.receipt)
+                task.executionReceipt = { receiptId: r.receipt.receiptId, executor: r.receipt.executor, status: r.receipt.status, registeredAt: r.registeredAt };
+        }
         state.scheduleOccurrences = state.scheduleOccurrences.map((o) => {
             if (!o.taskId || o.status === 'pending-confirmation')
                 return o;
@@ -231,7 +235,8 @@ export class FileWorkspace extends WorkspaceStore {
     }
     checkRevision(revision) { if (revision !== this.digest())
         throw Error('资料已被其他操作更新，请刷新后重试'); }
-    createTask(input, revision) { if (input.sourceLeadId !== undefined) {
+    createTask(input, revision) { if (Object.hasOwn(input, 'entityVersion'))
+        throw Error('Server-owned entityVersion'); if (input.sourceLeadId !== undefined) {
         const context = new CrmService(this).crmLeadContext(input.sourceLeadId);
         if (context.lead.archivedAt)
             throw Error('CRM lead archived');
@@ -240,19 +245,21 @@ export class FileWorkspace extends WorkspaceStore {
         input = { ...input, inputs: JSON.stringify({ crmLeadId: context.lead.id, sourceLeadId: context.lead.sourceLeadId, source: context.lead.source, currentLead: context.lead, company: context.company, contacts: context.contacts, followups: context.followups, artifactIds: context.artifactIds }), instructions: (input.instructions || '') + '\n仅当前客户私有任务取用 CRM 实际记录；不得自动发送、提取虚构联系人、标记成交或共享至咨询/发布/知识库。' };
     } const before = this.load().tasks.map((t) => t.id); const state = this.save({ action: 'task', payload: input, revision }); return state.tasks.find((t) => !before.includes(t.id)); }
     task(taskId) { if (!validId(taskId))
-        throw Error('Invalid task'); const file = path.join(this.base, 'tasks', taskId + '.json'); if (!fs.existsSync(file))
+        throw Error('Invalid task'); const file = path.join(this.base, 'tasks', taskId + '.json'); if (!this.exists(file))
         throw Error('任务不存在'); const task = this.json(file); if (task.id !== taskId)
         throw Error('任务文件编号不匹配'); if (task.workspaceId && task.workspaceId !== this.json(path.join(this.base, 'workspace.json')).workspaceId)
         throw Error('任务客户不匹配'); return task; }
     registerManual(task, file) {
         const artifactId = task.id;
-        const artifact = { id: artifactId, workspaceId: this.load().workspace.workspaceId, taskId: task.id, module: task.stage, skillVersion: task.skillVersion || 'legacy', inputSnapshotRef: task.inputSnapshotRef || '', executedAt: null, path: path.relative(this.root, file), summary: task.name, sources: [], gaps: ['手动保存，执行来源未核验'], nextSteps: [], verification: 'unverified', contentHash: contentHash(fs.readFileSync(file)), executor: 'manual' };
+        const artifact = { id: artifactId, workspaceId: this.load().workspace.workspaceId, taskId: task.id, module: task.stage, skillVersion: task.skillVersion || 'legacy', inputSnapshotRef: task.inputSnapshotRef || '', executedAt: null, path: path.relative(this.root, file), summary: task.name, sources: [], gaps: ['手动保存，执行来源未核验'], nextSteps: [], verification: 'unverified', contentHash: contentHash(this.readBytes(file)), executor: 'manual' };
         this.put(path.join(this.base, 'artifacts', artifactId + '.json'), artifact);
         Object.assign(task, { artifact: path.relative(this.base, file), artifactIds: [...new Set([...(task.artifactIds || []), artifactId])], status: 'needs-review' });
         this.put(path.join(this.base, 'tasks', task.id + '.json'), task);
         return artifact;
     }
     applyReceipt(taskId, receipt, revision) {
+        if (Object.hasOwn(receipt, 'entityVersion') || (receipt.artifacts ?? []).some((a) => Object.hasOwn(a, 'entityVersion')))
+            throw Error('Server-owned entityVersion');
         this.checkRevision(revision);
         const task = this.task(taskId), workspaceId = this.load().workspace.workspaceId;
         const normalized = { ...task, workspaceId: task.workspaceId || workspaceId, skillVersion: task.skillVersion || 'legacy' };
@@ -260,7 +267,7 @@ export class FileWorkspace extends WorkspaceStore {
             throw Error('回执任务不匹配');
         const updated = validateReceipt(normalized, receipt);
         const receiptKey = contentHash(taskId + '\n' + receipt.receiptId), receiptFile = path.join(this.base, 'receipts', receiptKey + '.json'), fingerprint = contentHash(JSON.stringify(receipt));
-        if (fs.existsSync(receiptFile)) {
+        if (this.exists(receiptFile)) {
             if (this.json(receiptFile).fingerprint !== fingerprint)
                 throw Error('receiptId 已存在且内容不同');
             return this.load().tasks.find((t) => t.id === taskId);
@@ -361,7 +368,7 @@ export class FileWorkspace extends WorkspaceStore {
             }
             if (action === 'schedule-occurrence') {
                 const scheduledAt = validateOccurrence(schedule, p.scheduledAt), key = occurrenceKey(schedule.id, scheduledAt), file = path.join(this.base, 'schedule-occurrences', key + '.json');
-                if (fs.existsSync(file))
+                if (this.exists(file))
                     return this.load();
                 const allowed = authorizationAllowed(schedule), row = { id: key, workspaceId: current.workspace.workspaceId, scheduleId: schedule.id, scheduledAt, actualAt: null, createdAt: new Date().toISOString(), hostTaskId: schedule.hostTaskId, status: 'preparing', taskId: null, result: null, error: null, retryAllowed: false };
                 // Reserve before task creation: a failed attempt is retained and never automatically retried.
@@ -382,13 +389,13 @@ export class FileWorkspace extends WorkspaceStore {
                 return this.load();
             }
             const key = occurrenceKey(schedule.id, p.scheduledAt), file = path.join(this.base, 'schedule-occurrences', key + '.json');
-            if (!fs.existsSync(file))
+            if (!this.exists(file))
                 throw Error('执行批次不存在');
             const row = this.json(file);
             if (!row.taskId || p.receipt?.taskId !== row.taskId)
                 throw Error('执行回执批次不匹配');
             const existingReceiptFile = path.join(this.base, 'receipts', contentHash(row.taskId + '\n' + p.receipt.receiptId) + '.json');
-            if (fs.existsSync(existingReceiptFile)) {
+            if (this.exists(existingReceiptFile)) {
                 if (this.json(existingReceiptFile).fingerprint !== contentHash(JSON.stringify(p.receipt)))
                     throw Error('receiptId 已存在且内容不同');
                 return this.load(); // Exact replay is read-only, including terminal outcomes.
@@ -439,6 +446,10 @@ export class FileWorkspace extends WorkspaceStore {
             this.applyReceipt(p.taskId, p, current.revision);
             return this.load();
         }
+        if (action === 'knowledge-metadata') {
+            saveKnowledgeMetadata(this, p, { revision: current.revision });
+            return this.load();
+        }
         if (action === 'knowledge-confirm') {
             this.confirmKnowledge(p.path, p.contentHash, current.revision);
             return this.load();
@@ -450,7 +461,7 @@ export class FileWorkspace extends WorkspaceStore {
             let a = current.artifacts.find((a) => a.taskId === t.id);
             if (!a) {
                 const file = this.checked(path.join(this.base, 'artifacts', t.id + '.md'));
-                if (!fs.existsSync(file))
+                if (!this.exists(file))
                     throw Error('需要先保存实际产物');
                 a = this.registerManual(t, file);
             }
@@ -534,6 +545,8 @@ export class FileWorkspace extends WorkspaceStore {
             this.write(path.join(this.base, 'knowledge', id() + '.md'), '# ' + text('title').trim() + '\n\n' + text('content', 900000).trim() + '\n\n来源：' + text('source').trim() + '\n日期：' + now + '\n审核状态：待确认\n');
         }
         else if (action === 'task') {
+            if (Object.hasOwn(p, 'entityVersion'))
+                throw Error('Server-owned entityVersion');
             if (p.sourceLeadId !== undefined) {
                 const context = new CrmService(this).crmLeadContext(p.sourceLeadId);
                 if (context.lead.archivedAt || context.company.archivedAt)
@@ -574,19 +587,30 @@ export class FileWorkspace extends WorkspaceStore {
     }
 }
 export function createServer(store, port, options = {}) {
+    const loginLimiter = new LoginLimiter(), authClock = options.authClock ?? Date.now;
     const token = crypto.randomBytes(32).toString('base64url');
     const isPublic = options.publicMode ?? publicMode(process.argv.slice(2), process.env);
-    const secretRoot = options.appRoot ?? APP;
+    const secretRoot = resolveInstance(store.root, { privateBase: options.privateBase });
     const owner = options.ownerConfig ?? loadOwnerConfig(secretRoot, isPublic);
     if (owner.publicMode !== isPublic)
         throw Error('Owner configuration mode mismatch');
     const cloudConfig = loadCloudConfig();
     const content = new ContentService(store);
     const crm = new CrmService(store);
+    const members = new MemberService(store);
     const publication = new PublicationService(store, () => { const secrets = loadPublisherSecrets(secretRoot); if (!secrets.apiKey)
         throw Error('Publisher unavailable'); return { secrets, publisher: options.publisherPort ?? new McpPublisher(secrets.apiKey, options.publisherFetch) }; });
-    return http.createServer(async (req, res) => {
+    const server = http.createServer(async (req, res) => {
+        let buffered, buffering = false;
         const respond = (value, status = 200, mime = 'application/json; charset=utf-8') => {
+            if (buffering) {
+                buffered = { value, status, mime };
+                return;
+            }
+            if (req.headers['x-crm-mode'] === 'summary' && value?.crm && value.crm.mode !== 'summary') {
+                const snapshot = { workspace: value.workspace ?? { workspaceId: crm.workspaceId }, revision: value.revision, crm: value.crm };
+                value = { ...value, crm: crmSummary(snapshot), ...(Array.isArray(value.feedback) ? { feedback: value.feedback.map((f) => ({ ...f, crmLeadId: value.crm.feedbackLinks?.find((l) => l.feedbackId === f.id)?.crmLeadId ?? null })) } : {}), ...(Array.isArray(value.dailyActions) ? { dailyActions: value.dailyActions.map((a) => String(a.id).startsWith('crm-followup:') ? { ...a, inputs: '' } : a) } : {}) };
+            }
             const data = Buffer.isBuffer(value) ? value : Buffer.from(JSON.stringify(value));
             res.writeHead(status, { 'Content-Type': mime, 'Content-Length': data.length, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
             res.end(data);
@@ -596,16 +620,22 @@ export function createServer(store, port, options = {}) {
         const pathname = (req.url ?? '/').split('?')[0];
         try {
             const origin = req.headers.origin;
-            const protocol = req.socket.encrypted || (options.trustProxy && req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http';
+            const protocol = req.socket.encrypted || (trustedProxySocket(req, options.trustProxy, options.trustedProxyAddresses) && req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http';
             if (origin && origin !== protocol + '://' + req.headers.host)
                 return respond({ error: 'Invalid origin' }, 403);
             if (pathname === '/healthz' && req.method === 'GET')
                 return respond({ ok: true });
             if (pathname === '/api/auth/status' && req.method === 'GET')
-                return respond({ ...authorizeOwner(req, owner), publicMode: isPublic });
+                return respond({ ...authorizeOwner(req, owner, authClock()), publicMode: isPublic });
             if (pathname === '/api/auth/login' && req.method === 'POST') {
                 if (!owner.passwordHash)
                     return respond({ error: 'Configure owner with local CLI', setupRequired: true }, 401);
+                const nowMs = authClock(), clientKey = clientAddress(req, options.trustProxy, options.trustedProxyAddresses);
+                const limit = loginLimiter.check(secretRoot.instanceId, clientKey, nowMs);
+                if (!limit.allowed) {
+                    res.setHeader('Retry-After', String(limit.retryAfterSeconds));
+                    return respond({ error: '登录尝试过于频繁', loginRequired: true, retryAfterSeconds: limit.retryAfterSeconds }, 429);
+                }
                 const chunks = [];
                 let size = 0;
                 for await (const chunk of req) {
@@ -615,14 +645,17 @@ export function createServer(store, port, options = {}) {
                     chunks.push(chunk);
                 }
                 const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-                if (!verifyPassword(body.password, owner.passwordHash))
+                if (!verifyPassword(body.password, owner.passwordHash)) {
+                    loginLimiter.failure(secretRoot.instanceId, clientKey, nowMs);
                     return respond({ error: 'Invalid owner password', loginRequired: true }, 401);
-                const session = issueOwnerSession(owner);
+                }
+                loginLimiter.success(secretRoot.instanceId, clientKey, nowMs);
+                const session = issueOwnerSession(owner, nowMs);
                 res.setHeader('Set-Cookie', 'wb_owner=' + session + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=' + owner.sessionTtlSeconds + (protocol === 'https' ? '; Secure' : ''));
                 return respond({ allowed: true });
             }
-            const auth = authorizeOwner(req, owner);
-            const shell = ['/', '/index.html', '/styles-v03.css', '/web/main.js', '/web/auth-bootstrap.js', '/web/modules.js', '/web/views/login.js'];
+            const auth = authorizeOwner(req, owner, authClock());
+            const shell = ['/', '/index.html', '/styles-v03.css', '/web/main.js', '/web/workbench-ui.js', '/web/auth-bootstrap.js', '/web/modules.js', '/web/views/login.js'];
             if (!auth.allowed && !shell.includes(pathname))
                 return respond({ ...auth, error: auth.setupRequired ? 'Owner setup required' : 'Owner login required' }, 401);
             if (pathname === '/api/auth/logout' && req.method === 'POST') {
@@ -633,83 +666,121 @@ export function createServer(store, port, options = {}) {
                 return respond({ ok: true });
             }
             if (req.method === 'GET') {
-                if (pathname === '/healthz')
-                    return respond({ ok: true });
-                if (pathname === '/api/update/inspect')
-                    return respond(inspectUpdate(store.root));
-                if (pathname === '/api/backup/snapshot') {
-                    if (req.headers['x-workspace-token'] !== token)
-                        return respond({ error: '授权校验失败，请刷新工作台' }, 403);
-                    return respond(createSnapshot(store.root));
-                }
-                if (pathname === '/api/update') {
-                    try {
-                        const response = await fetch('https://raw.githubusercontent.com/colaliang/yundian-ai-growth-workbench/main/release.json', { signal: AbortSignal.timeout(5000) });
-                        if (!response.ok)
-                            throw Error('Release unavailable');
-                        return respond(releaseInfo(await response.json()));
+                let snapshot, crmSnapshot;
+                const readCrm = () => crmSnapshot ??= CrmService.readSnapshot(store);
+                const readSnapshot = () => snapshot ??= store.load(readCrm());
+                const getRoute = async () => {
+                    if (pathname === '/healthz')
+                        return respond({ ok: true });
+                    if (pathname === '/api/runtime/status')
+                        return respond({ ...instanceMetadata(secretRoot), lock: inspectLease(store.root), checkedAt: new Date().toISOString() });
+                    if (pathname === '/api/update/inspect')
+                        return respond(inspectUpdate(store.root));
+                    if (pathname === '/api/backup/plan') {
+                        if (req.headers['x-workspace-token'] !== token)
+                            return respond({ error: 'Invalid workspace token' }, 403);
+                        return respond(await readBackupPlan(store.root));
                     }
-                    catch {
-                        return respond({ error: '版本检查失败，请稍后重试或在WorkBuddy检查仓库版本' }, 502);
+                    if (pathname === '/api/backup/snapshot') {
+                        if (req.headers['x-workspace-token'] !== token)
+                            return respond({ error: '授权校验失败，请刷新工作台' }, 403);
+                        return respond(createSnapshot(store.root));
                     }
-                }
-                if (/^\/api\/crm\/leads\/[a-f0-9]{32}\/context$/.test(pathname))
-                    return respond({ context: crm.crmLeadContext(pathname.split('/')[4]), revision: store.load().revision });
-                if (pathname.startsWith('/api/crm/')) {
-                    const match = /^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32}))?$/.exec(pathname);
-                    if (!match)
+                    if (pathname === '/api/update') {
+                        try {
+                            const response = await fetch('https://raw.githubusercontent.com/colaliang/yundian-ai-growth-workbench/main/release.json', { signal: AbortSignal.timeout(5000) });
+                            if (!response.ok)
+                                throw Error('Release unavailable');
+                            return respond(releaseInfo(await response.json()));
+                        }
+                        catch {
+                            return respond({ error: '版本检查失败，请稍后重试或在WorkBuddy检查仓库版本' }, 502);
+                        }
+                    }
+                    if (pathname === '/api/crm/editor-options') {
+                        const params = new URL(req.url, 'http://localhost').searchParams, snapshot = readSnapshot();
+                        if (params.has('workspaceId') && params.get('workspaceId') !== snapshot.workspace.workspaceId)
+                            throw Error('CRM workspace mismatch');
+                        if (params.has('revision') && params.get('revision') !== snapshot.revision)
+                            return respond({ error: 'revision conflict: 请刷新并重新确认' }, 409);
+                        const kind = params.get('kind') || '', page = Number(params.get('page') || 1), query = params.get('query') || '';
+                        if (kind === 'opportunity') {
+                            const rows = snapshot.records.filter((r) => r.stage === 'product-opportunity' && r.opportunityId && String(r.name || '').toLowerCase().includes(query.toLowerCase()));
+                            if (params.getAll('selected').length > 100)
+                                throw Error('Invalid selected options');
+                            const label = (r) => ({ opportunityId: r.opportunityId, name: r.name });
+                            return respond({ ...pageRows(rows.map(label), page, 20), selected: snapshot.records.filter((r) => params.getAll('selected').includes(r.opportunityId)).map(label).slice(0, 100), revision: snapshot.revision });
+                        }
+                        return respond(queryEditorOptions(snapshot, { kind, query, page, selected: params.getAll('selected'), companyId: params.get('companyId') || undefined, includeInactive: params.get('includeInactive') === 'true', includeArchived: params.get('includeArchived') === 'true' }));
+                    }
+                    if (/^\/api\/crm\/leads\/[a-f0-9]{32}\/context$/.test(pathname)) {
+                        const params = new URL(req.url, 'http://localhost').searchParams, snapshot = readSnapshot();
+                        if (params.has('workspaceId') && params.get('workspaceId') !== snapshot.workspace.workspaceId)
+                            throw Error('CRM workspace mismatch');
+                        if (params.has('revision') && params.get('revision') !== snapshot.revision)
+                            return respond({ error: 'revision conflict: 请刷新并重新确认' }, 409);
+                        return respond({ context: readCrm().crmLeadContext(pathname.split('/')[4]), revision: snapshot.revision });
+                    }
+                    if (pathname.startsWith('/api/crm/')) {
+                        const match = /^\/api\/crm\/(members|companies|contacts|leads|followups)(?:\/([a-f0-9]{32}))?$/.exec(pathname);
+                        if (!match)
+                            return respond({ error: 'Not found' }, 404);
+                        const family = 'crm-' + match[1], filters = Object.fromEntries(new URL(req.url, 'http://localhost').searchParams);
+                        return respond({ items: match[2] ? [readCrm().get(family, match[2])] : readCrm().list(family, filters), revision: readSnapshot().revision });
+                    }
+                    if (pathname === '/api/content/items') {
+                        const params = new URL(req.url, 'http://localhost').searchParams;
+                        return respond({ items: content.list(Object.fromEntries(params)), revision: store.load().revision });
+                    }
+                    if (pathname === '/api/publisher/attempts')
+                        return respond({ attempts: publication.listAttempts(), revision: store.load().revision });
+                    if (pathname === '/api/content/export')
+                        return respond(content.exportPlan());
+                    if (['/api/publisher/connect', '/api/publisher/channels', '/api/publisher/media', '/api/publisher/balance'].includes(pathname)) {
+                        const key = loadPublisherSecrets(secretRoot).apiKey;
+                        if (!key)
+                            return respond({ connected: false, checkedAt: new Date().toISOString(), capabilities: [], error: '发布服务未配置' }, 409);
+                        const publisher = new McpPublisher(key, options.publisherFetch);
+                        if (pathname.endsWith('/connect'))
+                            return respond(await publisher.connect());
+                        if (pathname.endsWith('/channels'))
+                            return respond({ channels: await publisher.listChannels() });
+                        if (pathname.endsWith('/media'))
+                            return respond({ media: await publisher.listMedia() });
+                        return respond(await publisher.getBalance());
+                    }
+                    if (pathname === '/api/publisher/config')
+                        return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
+                    if (pathname === '/api/state') {
+                        const full = readSnapshot(), summary = new URL(req.url, 'http://localhost').searchParams.get('crm') === 'summary', view = summary ? { ...full, crm: crmSummary(full), feedback: full.feedback.map((f) => ({ ...f, crmLeadId: full.crm.feedbackLinks.find((l) => l.feedbackId === f.id)?.crmLeadId ?? null })), dailyActions: full.dailyActions.map((a) => String(a.id).startsWith('crm-followup:') ? { ...a, inputs: '' } : a) } : full;
+                        return respond({ ...view, token, projectRoot: store.root, runtime: { ...instanceMetadata(secretRoot), lock: inspectLease(store.root), checkedAt: new Date().toISOString() }, backupPlan: planFromWorkspace(full.workspace), cloud: isPublic ? null : cloudConfig, publisher: publisherMetadata(loadPublisherSecrets(secretRoot)), kbCheck: knowledgeCheck(store) });
+                    }
+                    if (pathname.startsWith('/api/artifacts/')) {
+                        const parts = pathname.split('/'), a = store.artifact(parts[3]);
+                        if (parts[4] === 'file') {
+                            if (!a.path || !a.contentHash)
+                                return respond({ error: '实际文件无法读取' }, 404);
+                            const file = store.checked(path.resolve(store.root, a.path));
+                            return respond(store.readBytes(file), 200, 'application/octet-stream');
+                        }
+                        return respond(a);
+                    }
+                    if (pathname.startsWith('/api/artifact/')) {
+                        const name = pathname.split('/').pop();
+                        if (!/^[a-f0-9]{32}\.md$/.test(name))
+                            return respond({ error: 'Invalid artifact' }, 400);
+                        const file = store.checked(path.join(store.base, 'artifacts', name));
+                        return store.exists(file) ? respond(store.readBytes(file), 200, 'text/plain; charset=utf-8') : respond({ error: 'Not found' }, 404);
+                    }
+                    const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app-v03.js': ['app-v03.js', 'text/javascript'], '/styles-v03.css': ['styles-v03.css', 'text/css'], '/brand.jpg': ['brand.jpg', 'image/jpeg'], ...Object.fromEntries(['ui/feedback.js', 'ui/dialog.js', 'views/onboarding.js', 'crm-query.js', 'read-context.js', 'views/crm-editor.js', 'views/crm-members.js', 'workbench-ui.js', 'auth-bootstrap.js', 'views/login.js', 'views/content-plan.js', 'views/crm.js', 'views/crm-funnel.js', 'modules.js', 'main.js', 'api.js', 'safe-url.js', 'views/workbench.js', 'views/settings.js', 'views/skills.js', 'views/knowledge.js', 'views/results.js', 'views/daily-actions.js', 'views/schedules.js', 'views/services.js', 'views/backup.js'].map(file => ['/web/' + file, ['web/' + file, 'text/javascript']])) };
+                    if (!files[pathname])
                         return respond({ error: 'Not found' }, 404);
-                    const family = 'crm-' + match[1], filters = Object.fromEntries(new URL(req.url, 'http://localhost').searchParams);
-                    return respond({ items: match[2] ? [crm.get(family, match[2])] : crm.list(family, filters), revision: store.load().revision });
-                }
-                if (pathname === '/api/content/items') {
-                    const params = new URL(req.url, 'http://localhost').searchParams;
-                    return respond({ items: content.list(Object.fromEntries(params)), revision: store.load().revision });
-                }
-                if (pathname === '/api/publisher/attempts')
-                    return respond({ attempts: publication.listAttempts(), revision: store.load().revision });
-                if (pathname === '/api/content/export')
-                    return respond(content.exportPlan());
-                if (['/api/publisher/connect', '/api/publisher/channels', '/api/publisher/media', '/api/publisher/balance'].includes(pathname)) {
-                    const key = loadPublisherSecrets(secretRoot).apiKey;
-                    if (!key)
-                        return respond({ connected: false, checkedAt: new Date().toISOString(), capabilities: [], error: '发布服务未配置' }, 409);
-                    const publisher = new McpPublisher(key, options.publisherFetch);
-                    if (pathname.endsWith('/connect'))
-                        return respond(await publisher.connect());
-                    if (pathname.endsWith('/channels'))
-                        return respond({ channels: await publisher.listChannels() });
-                    if (pathname.endsWith('/media'))
-                        return respond({ media: await publisher.listMedia() });
-                    return respond(await publisher.getBalance());
-                }
-                if (pathname === '/api/publisher/config')
-                    return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
-                if (pathname === '/api/state')
-                    return respond({ ...store.load(), token, projectRoot: store.root, cloud: isPublic ? null : cloudConfig, publisher: publisherMetadata(loadPublisherSecrets(secretRoot)), kbCheck: knowledgeCheck(store) });
-                if (pathname.startsWith('/api/artifacts/')) {
-                    const parts = pathname.split('/'), a = store.artifact(parts[3]);
-                    if (parts[4] === 'file') {
-                        if (!a.path || !a.contentHash)
-                            return respond({ error: '实际文件无法读取' }, 404);
-                        const file = store.checked(path.resolve(store.root, a.path));
-                        return respond(fs.readFileSync(file), 200, 'application/octet-stream');
-                    }
-                    return respond(a);
-                }
-                if (pathname.startsWith('/api/artifact/')) {
-                    const name = pathname.split('/').pop();
-                    if (!/^[a-f0-9]{32}\.md$/.test(name))
-                        return respond({ error: 'Invalid artifact' }, 400);
-                    const file = store.checked(path.join(store.base, 'artifacts', name));
-                    return fs.existsSync(file) ? respond(fs.readFileSync(file), 200, 'text/plain; charset=utf-8') : respond({ error: 'Not found' }, 404);
-                }
-                const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app-v03.js': ['app-v03.js', 'text/javascript'], '/styles-v03.css': ['styles-v03.css', 'text/css'], '/brand.jpg': ['brand.jpg', 'image/jpeg'], ...Object.fromEntries(['auth-bootstrap.js', 'views/login.js', 'views/content-plan.js', 'views/crm.js', 'modules.js', 'main.js', 'api.js', 'safe-url.js', 'views/workbench.js', 'views/settings.js', 'views/skills.js', 'views/knowledge.js', 'views/results.js', 'views/daily-actions.js', 'views/schedules.js', 'views/services.js', 'views/backup.js'].map(file => ['/web/' + file, ['web/' + file, 'text/javascript']])) };
-                if (!files[pathname])
-                    return respond({ error: 'Not found' }, 404);
-                return respond(fs.readFileSync(path.join(APP, files[pathname][0])), 200, files[pathname][1]);
+                    return respond(fs.readFileSync(path.join(APP, files[pathname][0])), 200, files[pathname][1]);
+                };
+                const remote = ['/api/update', '/api/publisher/connect', '/api/publisher/channels', '/api/publisher/media', '/api/publisher/balance'];
+                return await (pathname.startsWith('/api/') && !remote.includes(pathname) ? readWorkspaceSnapshot(store.root, () => getRoute()) : getRoute());
             }
-            if (!(req.method === 'POST' || req.method === 'PATCH' && pathname.startsWith('/api/crm/')) || !(pathname.startsWith('/api/crm/') || pathname.startsWith('/api/content/') || pathname === '/api/publisher/config' || /^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname) || pathname === '/api/backup/restore' || pathname === '/api/backup/online' || pathname === '/api/save' || pathname === '/api/tasks' || /^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname) || pathname === '/api/knowledge/confirm'))
+            if (!(req.method === 'POST' || req.method === 'PATCH' && pathname.startsWith('/api/crm/')) || !(pathname.startsWith('/api/crm/') || pathname.startsWith('/api/content/') || pathname === '/api/publisher/config' || pathname === '/api/runtime/config-migration/preview' || pathname === '/api/runtime/config-migration/confirm' || /^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname) || ['/api/backup/restore', '/api/backup/online', '/api/backup/full/export', '/api/backup/full/preview', '/api/backup/full/confirm', '/api/backup/plan', '/api/backup/prune/preview', '/api/backup/prune/confirm'].includes(pathname) || pathname === '/api/save' || pathname === '/api/tasks' || /^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname) || pathname === '/api/knowledge/confirm'))
                 return respond({ error: 'Not found' }, 404);
             if (req.headers['x-workspace-token'] !== token)
                 return respond({ error: '授权校验失败，请刷新工作台' }, 403);
@@ -725,94 +796,205 @@ export function createServer(store, port, options = {}) {
             }
             // Synchronous mutations serialize revision checks and writes within this process.
             const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-            if (pathname.startsWith('/api/crm/')) {
-                store.checkRevision(body.revision);
-                if (body.workspaceId !== crm.workspaceId)
-                    throw Error('CRM workspace mismatch');
-                let result;
-                const match = /^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32})(?:\/(archive))?)?$/.exec(pathname);
-                if (req.method === 'POST' && pathname === '/api/crm/feedback-links') {
-                    if (body.confirmed !== true)
-                        throw Error('Customer confirmation required');
-                    result = crm.linkFeedback(body.feedbackId, body.crmLeadId);
+            if (pathname === '/api/backup/plan' || pathname.startsWith('/api/backup/prune/')) {
+                if (typeof body.revision !== 'string' || !body.revision)
+                    throw Error('Required workspace revision');
+                if (Object.keys(body).some(k => !['revision', 'enabled', 'id', 'confirmed'].includes(k)))
+                    throw Error('Backup administration accepts no filesystem paths');
+                if (pathname === '/api/backup/plan')
+                    return respond(await setBackupPlan(store.root, body.enabled, { revision: body.revision }));
+                if (pathname.endsWith('/preview'))
+                    return respond(await previewBackupPrune(store.root, { revision: body.revision }));
+                return respond(await confirmBackupPrune(store.root, body.id, { confirmed: body.confirmed, revision: body.revision }));
+            }
+            if (pathname.startsWith('/api/backup/full/')) {
+                if (typeof body.revision !== 'string' || !body.revision)
+                    throw Error('Required workspace revision');
+                if (Object.keys(body).some(k => !['revision', 'backupId', 'previewId', 'confirmed'].includes(k)))
+                    throw Error('Full backup only accepts local backup ID');
+                if (pathname.endsWith('/export'))
+                    return respond(await exportFullBackup(store.root, { revision: body.revision }));
+                if (pathname.endsWith('/preview')) {
+                    if (typeof body.backupId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(body.backupId))
+                        throw Error('Invalid local backup ID');
+                    return respond(await previewFullRestore(store.root, path.join(store.root, '.workbench-backups/full', body.backupId), { revision: body.revision }));
                 }
-                else if (req.method === 'POST' && pathname === '/api/crm/import/preview')
-                    result = crm.previewImport(body.rows);
-                else if (req.method === 'POST' && pathname === '/api/crm/import/confirm')
-                    result = crm.confirmImport(body.previewId, body.decisions);
-                else if (match) {
-                    const [, kind, entityId, archive] = match;
-                    if (archive && req.method === 'POST' && kind !== 'followups')
-                        result = crm.archiveEntity(kind === 'companies' ? 'company' : kind === 'contacts' ? 'contact' : 'lead', entityId);
-                    else if (entityId && req.method === 'PATCH' && !archive && kind !== 'followups')
-                        result = kind === 'companies' ? crm.updateCompany(entityId, body.input) : kind === 'contacts' ? crm.updateContact(entityId, body.input) : crm.updateLead(entityId, body.input);
-                    else if (!entityId && req.method === 'POST')
-                        result = kind === 'companies' ? crm.createCompany(body.input) : kind === 'contacts' ? crm.createContact(body.input) : kind === 'leads' ? crm.createLead(body.input) : crm.recordFollowUp(body.input);
+                return respond(await confirmFullRestore(store.root, body.previewId, { confirmed: body.confirmed, revision: body.revision }));
+            }
+            const route = async () => {
+                if (pathname.startsWith('/api/runtime/config-migration/')) {
+                    if (body.workspaceId !== secretRoot.workspaceId)
+                        throw Error('Runtime workspace mismatch');
+                    if (body.revision !== store.load().revision)
+                        return respond({ error: 'Workspace changed' }, 409);
+                    if (Object.keys(body).some(key => !['workspaceId', 'revision', 'id', 'confirmed'].includes(key)))
+                        throw Error('Legacy source must be selected through local CLI or server configuration');
+                    if (pathname.endsWith('/preview')) {
+                        if (!options.legacyAppRoot)
+                            throw Error('Select legacy APP with local CLI first');
+                        return respond(previewLegacyConfigMigration(secretRoot, options.legacyAppRoot, { legacyPrivateBase: options.legacyPrivateBase }));
+                    }
+                    return respond(confirmLegacyConfigMigration(secretRoot, body.id, { confirmed: body.confirmed }));
+                }
+                if ((pathname === '/api/crm/query' || pathname === '/api/crm/funnel') && req.method === 'POST') {
+                    const snapshot = store.load();
+                    if (body.workspaceId !== snapshot.workspace.workspaceId)
+                        throw Error('CRM workspace mismatch');
+                    if (typeof body.revision !== 'string' || body.revision !== snapshot.revision)
+                        return respond({ error: 'revision conflict: 资料已变化，请刷新并重新确认选择范围' }, 409);
+                    return respond(pathname.endsWith('/funnel') ? queryCrmFunnel(snapshot, body, Date.now()) : queryCrmPage(snapshot, body, Date.now()));
+                }
+                if (pathname === '/api/crm/export' && req.method === 'POST') {
+                    if (body.workspaceId !== crm.workspaceId)
+                        throw Error('CRM workspace mismatch');
+                    const snapshot = store.load();
+                    if (body.revision !== snapshot.revision)
+                        return respond({ error: '资料已变化，请刷新并重新确认导出范围' }, 409);
+                    if (!body.filter || typeof body.filter !== 'object' || Array.isArray(body.filter))
+                        throw Error('Invalid CRM filter');
+                    if (body.scopeId !== undefined && body.scopeId !== crmScopeId(snapshot, body.filter))
+                        return respond({ error: '资料已变化，请刷新并重新确认导出范围' }, 409);
+                    const rows = selectExportRows(projectCrmRows(snapshot.crm, body.filter, Date.now()), body.mode, body.ids);
+                    const csv = exportCrmCsv(rows, body.fields);
+                    res.setHeader('Content-Disposition', 'attachment; filename="crm-export.csv"');
+                    return respond(Buffer.from(csv, 'utf8'), 200, 'text/csv; charset=utf-8');
+                }
+                if (pathname === '/api/crm/lead-records' || /^\/api\/crm\/lead-records\/[a-f0-9]{32}$/.test(pathname)) {
+                    if (body.workspaceId !== crm.workspaceId)
+                        throw Error('CRM workspace mismatch');
+                    if (body.revision !== store.load().revision)
+                        return respond({ error: '资料已被其他操作更新，请刷新后重试' }, 409);
+                    const records = new LeadRecordService(store);
+                    const result = req.method === 'POST' && pathname === '/api/crm/lead-records' ? records.create(body.input) : req.method === 'PATCH' && pathname !== '/api/crm/lead-records' ? records.update(pathname.split('/')[4], body.input) : null;
+                    if (!result)
+                        return respond({ error: 'Not found' }, 404);
+                    return respond({ result, crm: body.crm === 'summary' ? crmSummary(store.load()) : store.load().crm, revision: store.load().revision });
+                }
+                if (pathname.startsWith('/api/crm/')) {
+                    store.checkRevision(body.revision);
+                    if (body.workspaceId !== crm.workspaceId)
+                        throw Error('CRM workspace mismatch');
+                    let result;
+                    const match = /^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32})(?:\/(archive))?)?$/.exec(pathname);
+                    if (req.method === 'POST' && pathname === '/api/crm/members/import/preview')
+                        result = members.preview(body.rows, body.projectRef);
+                    else if (req.method === 'POST' && pathname === '/api/crm/members/import/confirm')
+                        result = members.confirm(body.previewId, body.decisions, body.confirmed);
+                    else if (req.method === 'POST' && /^\/api\/crm\/members\/[a-f0-9]{32}\/status$/.test(pathname))
+                        result = members.setActive(pathname.split('/')[4], body.active);
+                    else if (req.method === 'POST' && pathname === '/api/crm/feedback-links') {
+                        if (body.confirmed !== true)
+                            throw Error('Customer confirmation required');
+                        result = crm.linkFeedback(body.feedbackId, body.crmLeadId);
+                    }
+                    else if (req.method === 'POST' && pathname === '/api/crm/import/preview')
+                        result = crm.previewImport(body.rows);
+                    else if (req.method === 'POST' && pathname === '/api/crm/import/confirm')
+                        result = crm.confirmImport(body.previewId, body.decisions);
+                    else if (match) {
+                        const [, kind, entityId, archive] = match;
+                        if (archive && req.method === 'POST' && kind !== 'followups')
+                            result = crm.archiveEntity(kind === 'companies' ? 'company' : kind === 'contacts' ? 'contact' : 'lead', entityId);
+                        else if (entityId && req.method === 'PATCH' && !archive && kind !== 'followups')
+                            result = kind === 'companies' ? crm.updateCompany(entityId, body.input) : kind === 'contacts' ? crm.updateContact(entityId, body.input) : crm.updateLead(entityId, body.input);
+                        else if (!entityId && req.method === 'POST')
+                            result = kind === 'companies' ? crm.createCompany(body.input) : kind === 'contacts' ? crm.createContact(body.input) : kind === 'leads' ? crm.createLead(body.input) : crm.recordFollowUp(body.input);
+                        else
+                            return respond({ error: 'Not found' }, 404);
+                    }
                     else
                         return respond({ error: 'Not found' }, 404);
+                    return respond({ result, crm: body.crm === 'summary' ? crmSummary(store.load()) : store.load().crm, revision: store.load().revision });
                 }
-                else
-                    return respond({ error: 'Not found' }, 404);
-                return respond({ result, crm: store.load().crm, revision: store.load().revision });
+                const publishing = /^\/api\/content\/items\/([\w-]+)\/(prepare-publish|publish)$/.exec(pathname), refresh = /^\/api\/publisher\/attempts\/([\w-]+)\/refresh$/.exec(pathname);
+                if (publishing || refresh) {
+                    await readWorkspaceSnapshot(store.root, () => store.checkRevision(body.revision));
+                    const result = refresh ? await publication.refreshAttempt(refresh[1], { revision: body.revision }) : publishing[2] === 'prepare-publish' ? await publication.preparePublish(publishing[1], body.input, { revision: body.revision }) : await publication.submitPublish(publishing[1], body.confirmationId, { revision: body.revision });
+                    return readWorkspaceSnapshot(store.root, () => respond({ result, items: content.list({}), attempts: publication.listAttempts(), revision: store.load().revision }));
+                }
+                if (pathname.startsWith('/api/content/')) {
+                    store.checkRevision(body.revision);
+                    let result;
+                    const match = /^\/api\/content\/items\/([\w-]+)(?:\/(approve|archive))?$/.exec(pathname);
+                    if (pathname === '/api/content/items')
+                        result = content.create(body.input);
+                    else if (pathname === '/api/content/import/preview')
+                        result = content.previewImport(body.raw, body.format);
+                    else if (pathname === '/api/content/import/confirm')
+                        result = content.confirmImport(body.previewId, body.decisions);
+                    else if (match)
+                        result = match[2] === 'approve' ? content.approve(match[1], body.contentHash) : match[2] === 'archive' ? content.archive(match[1], body.expectedRevision) : content.update(match[1], body.input, body.expectedRevision);
+                    else
+                        return respond({ error: 'Not found' }, 404);
+                    return respond({ result, items: content.list({}), revision: store.load().revision });
+                }
+                if (pathname === '/api/publisher/config') {
+                    if (body.revision !== store.load().revision)
+                        throw Error('Workspace changed');
+                    const existing = readInstanceConfig(secretRoot, 'publisher');
+                    savePublisherSecrets(secretRoot, { ...body.config, apiKey: body.config?.apiKey === undefined ? existing.apiKey ?? null : body.config.apiKey }, auth);
+                    return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
+                }
+                if (pathname.startsWith('/api/backup/')) {
+                    if (body.revision !== store.load().revision)
+                        throw Error('项目已变化，请刷新后再恢复');
+                    if (pathname === '/api/backup/online')
+                        return respond(await setOnlineBackup(store.root, body.enabled === true));
+                    return respond(restoreSnapshot(store.root, body.snapshot));
+                }
+                if (pathname === '/api/tasks')
+                    return respond({ task: store.createTask(body.payload ?? body.input, body.revision), ...store.load() });
+                if (pathname === '/api/knowledge/confirm') {
+                    store.confirmKnowledge(body.path, body.contentHash, body.revision);
+                    return respond(store.load());
+                }
+                const match = /^\/api\/tasks\/([a-f0-9]{32})\/(receipts|reviews)$/.exec(pathname);
+                if (match) {
+                    if (match[2] === 'receipts')
+                        store.applyReceipt(match[1], body.receipt ?? body.payload, body.revision);
+                    else
+                        store.reviewArtifact(match[1], body.contentHash, body.decision, body.evidence, body.revision, body.artifactId);
+                    return respond(store.load());
+                }
+                return respond(store.save(body));
+            };
+            const remoteMutation = /^\/api\/content\/items\/[\w-]+\/(prepare-publish|publish)$/.test(pathname) || /^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname);
+            buffering = true;
+            if (['/api/crm/export', '/api/crm/query', '/api/crm/funnel'].includes(pathname)) {
+                await readWorkspaceSnapshot(store.root, () => route());
             }
-            const publishing = /^\/api\/content\/items\/([\w-]+)\/(prepare-publish|publish)$/.exec(pathname), refresh = /^\/api\/publisher\/attempts\/([\w-]+)\/refresh$/.exec(pathname);
-            if (publishing || refresh) {
-                store.checkRevision(body.revision);
-                const result = refresh ? await publication.refreshAttempt(refresh[1]) : publishing[2] === 'prepare-publish' ? await publication.preparePublish(publishing[1], body.input) : await publication.submitPublish(publishing[1], body.confirmationId);
-                return respond({ result, items: content.list({}), attempts: publication.listAttempts(), revision: store.load().revision });
+            else if (remoteMutation || pathname === '/api/backup/plan' || pathname.startsWith('/api/backup/prune/')) {
+                await route();
+                buffered = await readWorkspaceSnapshot(store.root, () => committedResult(store, buffered));
             }
-            if (pathname.startsWith('/api/content/')) {
-                store.checkRevision(body.revision);
-                let result;
-                const match = /^\/api\/content\/items\/([\w-]+)(?:\/(approve|archive))?$/.exec(pathname);
-                if (pathname === '/api/content/items')
-                    result = content.create(body.input);
-                else if (pathname === '/api/content/import/preview')
-                    result = content.previewImport(body.raw, body.format);
-                else if (pathname === '/api/content/import/confirm')
-                    result = content.confirmImport(body.previewId, body.decisions);
-                else if (match)
-                    result = match[2] === 'approve' ? content.approve(match[1], body.contentHash) : match[2] === 'archive' ? content.archive(match[1], body.expectedRevision) : content.update(match[1], body.input, body.expectedRevision);
-                else
-                    return respond({ error: 'Not found' }, 404);
-                return respond({ result, items: content.list({}), revision: store.load().revision });
-            }
-            if (pathname === '/api/publisher/config') {
-                if (body.revision !== store.load().revision)
-                    throw Error('Workspace changed');
-                const existing = loadPublisherSecrets(secretRoot);
-                savePublisherSecrets(secretRoot, { ...body.config, apiKey: body.config?.apiKey === undefined ? existing.apiKey : body.config.apiKey }, auth);
-                return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
-            }
-            if (pathname.startsWith('/api/backup/')) {
-                if (body.revision !== store.load().revision)
-                    throw Error('项目已变化，请刷新后再恢复');
-                if (pathname === '/api/backup/online')
-                    return respond(await setOnlineBackup(store.root, body.enabled === true));
-                return respond(restoreSnapshot(store.root, body.snapshot));
-            }
-            if (pathname === '/api/tasks')
-                return respond({ task: store.createTask(body.payload ?? body.input, body.revision), ...store.load() });
-            if (pathname === '/api/knowledge/confirm') {
-                store.confirmKnowledge(body.path, body.contentHash, body.revision);
-                return respond(store.load());
-            }
-            const match = /^\/api\/tasks\/([a-f0-9]{32})\/(receipts|reviews)$/.exec(pathname);
-            if (match) {
-                if (match[2] === 'receipts')
-                    store.applyReceipt(match[1], body.receipt ?? body.payload, body.revision);
-                else
-                    store.reviewArtifact(match[1], body.contentHash, body.decision, body.evidence, body.revision, body.artifactId);
-                return respond(store.load());
-            }
-            return respond(store.save(body));
+            else
+                buffered = await runWorkspaceMutation(store.root, { revision: body.revision }, async () => { await route(); return buffered; });
+            buffering = false;
+            if (buffered)
+                return respond(buffered.value, buffered.status, buffered.mime);
         }
         catch (e) {
-            return respond({ error: e.code ? '文件操作失败，请检查项目目录' : pathname.startsWith('/api/publisher/') || pathname.startsWith('/api/auth/') ? 'Private configuration request failed' : e.message }, e.code ? 500 : 400);
+            buffering = false;
+            if (e.message === 'Workspace lease blocked' || e.message.startsWith('Lease blocked:'))
+                return respond({ error: '客户资料正被另一操作使用，请稍后重试', code: 'WORKSPACE_LOCKED' }, 423);
+            return respond({ error: e.code ? '文件操作失败，请检查项目目录' : pathname.startsWith('/api/publisher/') || pathname.startsWith('/api/auth/') ? 'Private configuration request failed' : e.message }, e.code ? 500 : /revision conflict|资料已被其他操作更新|资料已变化|Workspace changed|项目已变化/.test(e.message) ? 409 : 400);
         }
     });
+    let timer;
+    let busy = false;
+    server.on('listening', () => { const tick = async () => { if (busy)
+        return; busy = true; try {
+        await tickBackup(store.root, new Date().toISOString());
+    }
+    catch { }
+    finally {
+        busy = false;
+    } }; timer = setInterval(tick, 60000); timer.unref(); void tick(); });
+    server.on('close', () => { if (timer)
+        clearInterval(timer); });
+    return server;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    const { projectRoot, port, publicMode: isPublic } = parseRuntimeOptions(process.argv.slice(2), process.env);
-    createServer(new FileWorkspace(projectRoot), port, { publicMode: isPublic, trustProxy: process.env.WORKBENCH_TRUST_PROXY === '1' }).listen(port, isPublic ? '0.0.0.0' : '127.0.0.1', () => console.log('WorkBuddy workbench: http://127.0.0.1:' + port + (isPublic ? ' (public bind)' : '')));
+    const { projectRoot, port, publicMode: isPublic, privateBase, legacyPrivateBase } = parseRuntimeOptions(process.argv.slice(2), process.env);
+    createServer(await openFileWorkspace(projectRoot), port, { publicMode: isPublic, privateBase, legacyPrivateBase, trustProxy: process.env.WORKBENCH_TRUST_PROXY === '1', trustedProxyAddresses: (process.env.WORKBENCH_TRUSTED_PROXY_ADDRESSES ?? '').split(',').map(x => x.trim()).filter(Boolean) }).listen(port, isPublic ? '0.0.0.0' : '127.0.0.1', () => console.log('WorkBuddy workbench: http://127.0.0.1:' + port + (isPublic ? ' (public bind)' : '')));
 }

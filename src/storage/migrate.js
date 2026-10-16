@@ -1,9 +1,9 @@
+import { authorizeValidatedRestoreCopy } from "./restore-authorization.js";
 import { crmFamilies, validateCrmDataset } from "../crm/validation.js";
 import { validatePublicationPath } from "./publication-path.js";
 import { validatePublishingDataset } from "../publishing/validation.js";
 import { validatePublishingRecord } from "../publishing/service.js";
 import { validateContentRecord } from "../content/service.js";
-import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { WorkspaceStore } from "./workspace-store.js";
@@ -11,12 +11,12 @@ import { CONTRACT_VERSION } from "../domain/contracts.js";
 // v0.15's workspace schema 3 belongs to the legacy namespace, not the new contracts.
 export function migrateWorkspace(root) {
     const store = new WorkspaceStore(root), file = store.checked(path.join(store.base, 'workspace.json'));
-    if (!fs.existsSync(store.base))
+    if (!store.exists(store.base))
         return { changed: false, backupPath: null, schemaVersion: 3, contractVersion: CONTRACT_VERSION };
     const originals = new Map();
     const walk = (dir) => {
         store.checked(dir);
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        for (const entry of store.listDirectory(dir)) {
             const target = store.checked(path.join(dir, entry.name));
             if (entry.name === 'migration-backups')
                 continue;
@@ -26,7 +26,7 @@ export function migrateWorkspace(root) {
             if (entry.isDirectory())
                 walk(target);
             else if (entry.isFile()) {
-                const raw = fs.readFileSync(target);
+                const raw = store.readBytes(target);
                 originals.set(target, raw);
                 if (entry.name.endsWith('.json')) {
                     const value = JSON.parse(raw.toString('utf8').replace(/^\uFEFF/, ''));
@@ -47,9 +47,9 @@ export function migrateWorkspace(root) {
     };
     walk(store.base);
     // Existing history must be validated even when metadata has not yet been created.
-    if (!fs.existsSync(file) && [...originals.keys()].some(file => crmFamilies.includes(path.relative(store.base, file).split(path.sep)[0])))
+    if (!store.exists(file) && [...originals.keys()].some(file => crmFamilies.includes(path.relative(store.base, file).split(path.sep)[0])))
         throw Error('CRM records require an existing workspace manifest before initialization');
-    if (!fs.existsSync(file))
+    if (!store.exists(file))
         return { changed: false, backupPath: null, schemaVersion: 3, contractVersion: CONTRACT_VERSION };
     const workspace = JSON.parse(originals.get(file).toString('utf8').replace(/^\uFEFF/, ''));
     if (!workspace || typeof workspace !== 'object' || Array.isArray(workspace))
@@ -70,26 +70,14 @@ export function migrateWorkspace(root) {
         throw Error('Unsupported workspace schema');
     const next = { ...workspace, schemaVersion: 3, contractVersion: 2, workspaceId: workspace.workspaceId || crypto.randomUUID(), projectRoot: store.root, backup: { ...workspace.backup, enabled: false }, legacySchemaVersion: workspace.schemaVersion ?? null };
     const serialized = JSON.stringify(next, null, 2) + '\n';
-    const temp = store.checked(file + '.' + crypto.randomUUID() + '.tmp');
     const backupPath = store.checked(path.join(store.base, 'migration-backups', crypto.randomUUID()));
-    try {
-        fs.writeFileSync(temp, serialized, { flag: 'wx' });
-        const readback = JSON.parse(fs.readFileSync(temp, 'utf8'));
-        if (readback.schemaVersion !== 3 || readback.workspaceId !== next.workspaceId)
-            throw Error('Migration readback failed');
-        fs.mkdirSync(backupPath, { recursive: true });
-        for (const [source, raw] of originals) {
-            const dest = store.checked(path.join(backupPath, path.relative(store.base, source)));
-            fs.mkdirSync(path.dirname(dest), { recursive: true });
-            fs.writeFileSync(dest, raw, { flag: 'wx' });
-            if (!fs.readFileSync(dest).equals(raw))
-                throw Error('Backup readback failed');
-        }
-        fs.renameSync(temp, file);
+    for (const [source, raw] of originals) {
+        const dest = store.checked(path.join(backupPath, path.relative(store.base, source)));
+        authorizeValidatedRestoreCopy(store.root, dest, raw, 'archive');
+        store.writeBytes(dest, raw);
+        if (!store.readBytes(dest).equals(raw))
+            throw Error('Backup staged readback failed');
     }
-    finally {
-        if (fs.existsSync(temp))
-            fs.unlinkSync(temp);
-    }
+    store.write(file, serialized);
     return { changed: true, backupPath, schemaVersion: 3, contractVersion: 2 };
 }

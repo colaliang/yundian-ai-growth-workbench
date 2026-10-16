@@ -1,0 +1,19 @@
+// External process supervisor: the server's synchronous guards cannot block this deadline.
+import crypto from 'node:crypto';import {spawn} from 'node:child_process';import fs from 'node:fs';import path from 'node:path';import {performance} from 'node:perf_hooks';
+const args=process.argv.slice(2),option=(name,fallback)=>{const i=args.indexOf(name);return i<0?fallback:args[i+1];};
+const phase=option('--phase','before'),size=option('--size','500'),sourceRoot=option('--source-root',null),fixture=option('--fixture',null),outputDir=option('--output-dir',null),deadlineMs=Number(option('--deadline-ms','120000')),flows=option('--flows','query,detail,funnel,export,home,memory').split(',');
+if(!sourceRoot||!fixture||!outputDir||!['before','after'].includes(phase)||!['500','5000'].includes(size)||!Number.isFinite(deadlineMs)||deadlineMs<1000)throw Error('Invalid supervisor arguments');
+fs.mkdirSync(outputDir,{recursive:true});
+const treeHash=()=>{const hash=crypto.createHash('sha256'),base=path.join(fixture,'growth-workspace');const walk=dir=>{for(const ent of fs.readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){const file=path.join(dir,ent.name);if(ent.isDirectory())walk(file);else hash.update(path.relative(base,file)).update(fs.readFileSync(file));}};walk(base);return hash.digest('hex');};const inputHash=treeHash();
+for(const flow of flows){const output=path.resolve(outputDir,`${phase}-${size}-${flow}.json`),summaryPath=output+'.supervisor.json';if(fs.existsSync(output)||fs.existsSync(summaryPath))throw Error('Refuse evidence overwrite');
+ const argv=['scripts/benchmark-crm.mjs','--phase',phase,'--size',size,'--source-root',sourceRoot,'--fixture',fixture,'--output',output,'--flows',flow];
+ const started=performance.now(),child=spawn(process.execPath,argv,{stdio:['ignore','pipe','pipe'],cwd:process.cwd()}),log=fs.createWriteStream(output+'.log',{flags:'wx'});let pending='',lastEvent={stage:'startup',flow},timedOut=false;
+ const timer=setTimeout(()=>{if(child.exitCode===null&&child.signalCode===null){timedOut=true;child.kill('SIGTERM');}},deadlineMs);
+ child.stdout.on('data',chunk=>{log.write(chunk);process.stdout.write(chunk);pending+=chunk.toString();let newline;while((newline=pending.indexOf('\n'))>=0){const line=pending.slice(0,newline);pending=pending.slice(newline+1);for(const prefix of ['@D1_REQUEST_START ','@D1_REQUEST_FINISH '])if(line.startsWith(prefix)){lastEvent={stage:prefix.includes('START')?'request-start':'request-finish',...JSON.parse(line.slice(prefix.length))};}}});
+ child.stderr.on('data',chunk=>{log.write(chunk);process.stderr.write(chunk);});
+ const outcome=await new Promise(resolve=>{child.once('error',error=>resolve({code:null,signal:null,error:String(error)}));child.once('close',(code,signal)=>resolve({code,signal}));});clearTimeout(timer);await new Promise(resolve=>log.end(resolve));
+ const elapsedMs=performance.now()-started,finalHash=treeHash(),status=timedOut?'censored':outcome.code===0&&fs.existsSync(output)?'completed':'failed';
+ const progress=fs.existsSync(output+'.progress.json')?JSON.parse(fs.readFileSync(output+'.progress.json','utf8')):null;
+ fs.writeFileSync(summaryPath,JSON.stringify({phase,size:Number(size),flow,status,sourceRoot,fixture,inputHash,finalHash,fixtureUnchanged:inputHash===finalHash,ownedChild:{pid:child.pid,executable:process.execPath,argv},deadlineMs,elapsedMs,lastEvent,outcome,completedMeasurementsBeforeStop:progress?.completedMeasurements??[],censoring:timedOut?{scope:'whole owned child flow, including startup and any warmup; not per-request latency',observedLowerBoundMs:deadlineMs,responseBytes:null,median:null,p95:null,exportAttempted:flow==='export'&&lastEvent.route==='/api/crm/export'}:null},null,2),{flag:'wx'});
+ console.log(`SUPERVISOR ${phase} ${size} ${flow}: ${status} (${elapsedMs.toFixed(0)}ms)`);
+}

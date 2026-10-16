@@ -1,3 +1,6 @@
+import { validateKnowledgeMetadata, knowledgeMetadataFilename } from "../domain/knowledge-metadata.js";
+import { decodeBase64Bytes } from "../storage/base64.js";
+import { authorizeValidatedRestoreCopy } from "../storage/restore-authorization.js";
 import { crmFamilies, validateCrmRecord, validateCrmDataset } from "../crm/validation.js";
 import { validatePublicationPath } from "../storage/publication-path.js";
 import { validatePublishingDataset } from "../publishing/validation.js";
@@ -18,13 +21,13 @@ function safe(store, relative) { if (typeof relative !== 'string' || !relative |
     if (stat?.isSymbolicLink())
         throw Error('Snapshot symlink rejected');
 } return store.checked(result); }
-export function createSnapshot(root) { const store = new WorkspaceStore(root), w = workspace(store), files = []; function walk(folder) { for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+export function createSnapshot(root) { const store = new WorkspaceStore(root), w = workspace(store), files = []; function walk(folder) { for (const entry of store.listDirectory(folder)) {
     const file = path.join(folder, entry.name), relative = path.relative(store.root, file).split(path.sep).join('/');
     safe(store, relative);
     if (entry.isDirectory())
         walk(file);
     else if (entry.isFile()) {
-        const bytes = fs.readFileSync(file);
+        const bytes = store.readBytes(file);
         files.push({ path: relative, checksum: hash(bytes), data: bytes.toString('base64') });
     }
     else
@@ -34,6 +37,8 @@ const object = (value) => !!value && typeof value === 'object' && !Array.isArray
 function structured(value, family, workspaceId, legacy = false) {
     if (!object(value))
         throw Error('Invalid structured ' + family + ' record');
+    if (value.entityVersion !== undefined && (!Number.isSafeInteger(value.entityVersion) || value.entityVersion < 0))
+        throw Error('Invalid restored entity version');
     const strings = (...fields) => { for (const field of fields)
         if (typeof value[field] !== 'string' || !value[field].trim())
             throw Error('Invalid ' + family + ' ' + field); };
@@ -81,6 +86,10 @@ function structured(value, family, workspaceId, legacy = false) {
         for (const item of value.items)
             if (!object(item) || typeof item.id !== 'string' || typeof item.title !== 'string')
                 throw Error('Invalid audit item');
+        return;
+    }
+    if (family === 'knowledge-metadata') {
+        validateKnowledgeMetadata(value, workspaceId);
         return;
     }
     if (family === 'knowledge-confirmations') {
@@ -155,29 +164,35 @@ function structured(value, family, workspaceId, legacy = false) {
         }
     }
 }
-function validated(root, snapshot) {
+function validatedSnapshot(root, snapshot, limit) {
     const store = new WorkspaceStore(root), w = workspace(store);
     if (!snapshot || snapshot.workspaceId !== w.workspaceId)
         throw Error('Snapshot belongs to another workspace');
-    if (snapshot.schemaVersion !== 3 || snapshot.contractVersion !== 2 || !Array.isArray(snapshot.files) || snapshot.files.length > 10000)
+    if (snapshot.schemaVersion !== 3 || snapshot.contractVersion !== 2 || !Array.isArray(snapshot.files) || snapshot.files.length > limit)
         throw Error('Unsupported snapshot schema');
     const seen = new Set();
     const rows = snapshot.files.map(f => { const file = safe(store, f.path), key = f.path.toLowerCase(); if (seen.has(key))
-        throw Error('Duplicate snapshot path'); seen.add(key); if (typeof f.data !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(f.data))
-        throw Error('Invalid base64'); const bytes = Buffer.from(f.data, 'base64'); if (hash(bytes) !== f.checksum)
+        throw Error('Duplicate snapshot path'); seen.add(key); const bytes = decodeBase64Bytes(f.data); if (hash(bytes) !== f.checksum)
         throw Error('Snapshot checksum mismatch'); const stat = fs.lstatSync(file, { throwIfNoEntry: false }); if (stat && !stat.isFile())
         throw Error('Restore destination is not a file'); return { file, bytes, relative: f.path }; });
     const manifest = rows.find(r => r.relative.toLowerCase() === 'growth-workspace/workspace.json');
     if (!manifest)
         throw Error('Missing workspace manifest');
     const original = JSON.parse(manifest.bytes.toString('utf8').replace(/^\uFEFF/, ''));
+    if (original?.entityVersion !== undefined && (!Number.isSafeInteger(original.entityVersion) || original.entityVersion < 0))
+        throw Error('Invalid restored entity version');
     if (!object(original) || original.workspaceId !== w.workspaceId || original.schemaVersion !== 3 || original.contractVersion !== 2 || original.backup?.enabled !== false)
         throw Error('Invalid workspace manifest or enabled legacy backup');
+    const allPaths = new Set(rows.map(row => row.relative.toLowerCase()));
+    for (const row of rows) {
+        const parts = row.relative.toLowerCase().split('/');
+        for (let i = 1; i < parts.length; i++)
+            if (allPaths.has(parts.slice(0, i).join('/')))
+                throw Error('Conflicting snapshot file paths');
+    }
     for (const row of rows) {
         const canonical = row.relative.toLowerCase();
-        if (rows.some(other => other !== row && other.relative.toLowerCase().startsWith(canonical + '/')))
-            throw Error('Conflicting snapshot file paths');
-        const match = /^growth-workspace\/(workbench\.json|(?:tasks|receipts|reviews|records|feedback|schedules|artifacts|workflows|audits|knowledge-confirmations|daily-decisions|schedule-occurrences|delivery-programs|content-items|publish-attempts|publish-confirmations|crm-companies|crm-contacts|crm-leads|crm-followups|crm-feedback-links)\/[^/]+\.json)$/.exec(canonical);
+        const match = /^growth-workspace\/(workbench\.json|(?:tasks|receipts|reviews|records|feedback|schedules|artifacts|workflows|audits|knowledge-confirmations|knowledge-metadata|daily-decisions|schedule-occurrences|delivery-programs|content-items|publish-attempts|publish-confirmations|crm-members|crm-companies|crm-contacts|crm-leads|crm-followups|crm-feedback-links)\/[^/]+\.json)$/.exec(canonical);
         if (!match)
             continue;
         const family = canonical === 'growth-workspace/workbench.json' ? 'workbench' : canonical.split('/')[1];
@@ -193,7 +208,17 @@ function validated(root, snapshot) {
             const before = JSON.parse(oldManifest.bytes.toString('utf8').replace(/^\uFEFF/, ''));
             return object(before) && before.contractVersion === undefined && before.schemaVersion === original.legacySchemaVersion && (!Object.hasOwn(before, 'workspaceId') || before.workspaceId === w.workspaceId);
         });
-        structured(JSON.parse(row.bytes.toString('utf8').replace(/^\uFEFF/, '')), family, w.workspaceId, legacy);
+        const parsed = JSON.parse(row.bytes.toString('utf8').replace(/^\uFEFF/, ''));
+        structured(parsed, family, w.workspaceId, legacy);
+        if (family === 'knowledge-metadata') {
+            if (path.basename(row.file) !== knowledgeMetadataFilename(parsed.path))
+                throw Error('Knowledge metadata filename mismatch');
+            safe(store, 'growth-workspace/' + parsed.path);
+            for (const a of parsed.attachments)
+                if (a.path) {
+                    store.checked(path.join(store.root, a.path));
+                }
+        }
     }
     const local = new Map();
     for (const family of ['content-items', 'publish-confirmations', 'publish-attempts'])
@@ -239,19 +264,29 @@ function validated(root, snapshot) {
     }
     return { store, rows };
 }
-export function restoreSnapshot(root, snapshot) { const { store, rows } = validated(root, snapshot); const backupRoot = path.join(store.root, '.workbench-backups'); if (fs.lstatSync(backupRoot, { throwIfNoEntry: false })?.isSymbolicLink())
-    throw Error('Backup directory symlink rejected'); const current = createSnapshot(root); const folder = store.checked(path.join(store.root, '.workbench-backups', crypto.randomUUID())); fs.mkdirSync(folder, { recursive: true }); const backupPath = path.join(folder, 'before-restore.json'); fs.writeFileSync(backupPath, JSON.stringify(current), { flag: 'wx' }); const result = { backupPath, restored: [], conflicts: [] }; for (const row of rows) {
-    if (fs.existsSync(row.file)) {
-        if (fs.readFileSync(row.file).equals(row.bytes))
+// Separate internal full-bundle validator; no caller-selected cap on the legacy Snapshot API.
+export function validateSnapshot(root, snapshot) { return validatedSnapshot(root, snapshot, 10000); }
+export function validateFullBackupSnapshot(root, snapshot) { return validatedSnapshot(root, snapshot, 100000); }
+export function restoreSnapshot(root, snapshot) { const { store, rows } = validateSnapshot(root, snapshot); const backupRoot = path.join(store.root, '.workbench-backups'); if (fs.lstatSync(backupRoot, { throwIfNoEntry: false })?.isSymbolicLink())
+    throw Error('Backup directory symlink rejected'); const current = createSnapshot(root); const folder = store.checked(path.join(store.root, '.workbench-backups', crypto.randomUUID())); const backupPath = path.join(folder, 'before-restore.json'); const backupBytes = Buffer.from(JSON.stringify(current)); authorizeValidatedRestoreCopy(store.root, backupPath, backupBytes, 'archive'); store.writeBytes(backupPath, backupBytes); const result = { backupPath, restored: [], conflicts: [] }; for (const row of rows) {
+    if (row.relative === 'growth-workspace/backup-sources.json') {
+        const incoming = store.checked(path.join(folder, 'incoming', row.relative));
+        authorizeValidatedRestoreCopy(store.root, incoming, row.bytes, 'archive');
+        store.writeBytes(incoming, row.bytes);
+        result.restored.push(path.relative(store.root, incoming).split(path.sep).join('/'));
+        continue;
+    }
+    if (store.exists(row.file)) {
+        if (store.readBytes(row.file).equals(row.bytes))
             continue;
         const incoming = store.checked(path.join(folder, 'incoming', row.relative));
-        fs.mkdirSync(path.dirname(incoming), { recursive: true });
-        fs.writeFileSync(incoming, row.bytes, { flag: 'wx' });
+        authorizeValidatedRestoreCopy(store.root, incoming, row.bytes, 'archive');
+        store.writeBytes(incoming, row.bytes);
         result.conflicts.push({ path: row.relative, local: row.file, incoming });
     }
     else {
-        fs.mkdirSync(path.dirname(row.file), { recursive: true });
-        fs.writeFileSync(row.file, row.bytes, { flag: 'wx' });
+        authorizeValidatedRestoreCopy(store.root, row.file, row.bytes, row.relative.startsWith('growth-workspace/migration-backups/') ? 'archive' : 'entity');
+        store.writeBytes(row.file, row.bytes);
         result.restored.push(row.relative);
     }
 } return result; }

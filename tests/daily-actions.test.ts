@@ -1,3 +1,5 @@
+import {openFileWorkspace} from '../src/runtime/workspace.ts';
+import {fixtureMutation} from './fixtures/coordinated-workspace.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {dailyContext,recommendDaily} from '../src/domain/daily-actions.ts';
@@ -12,14 +14,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {FileWorkspace} from '../server.ts';
-test('workspace decisions survive restart; feedback creates one real ready task',()=>{
+test('workspace decisions survive restart; feedback creates one real ready task',async ()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'daily-actions-'));
- try{let store=new FileWorkspace(root);const save=(action:string,payload:any)=>store.save({action,payload,revision:store.load().revision});
- save('daily-ignore',{id:'knowledge:profile'});store=new FileWorkspace(root);assert.equal(store.load().dailyActions.length,0);
- save('profile',{company:'A',products:'B',markets:'C',persona:'D',goal:'E'});save('feedback',{leadId:'lead-1',source:'actual-call',cycleId:'cycle-1',result:'客户拒绝报价',reason:'交期',next:'核对交期信息'});
- const action=store.load().dailyActions[0];save('daily-defer',{id:action.id});assert.equal(new FileWorkspace(root).load().dailyActions.length,0);
- const decisionFile=store.files('daily-decisions','.json').find(f=>store.json(f).id===action.id)!;const d=store.json(decisionFile);store.put(decisionFile,{...d,until:'2000-01-01T00:00:00Z'});
- save('daily-create',{id:action.id});const state=new FileWorkspace(root).load();assert.equal(state.tasks.length,1);assert.equal(state.tasks[0].status,'ready');assert.ok(state.tasks[0].invocation.includes(state.tasks[0].id));assert.ok(state.tasks[0].inputs.includes('交期'));assert.equal(state.dailyDecisions[action.id].taskId,state.tasks[0].id);assert.throws(()=>save('daily-create',{id:action.id}),/建议已变化/);
+ try{let store=(await openFileWorkspace(root));const save=async (action:string,payload:any)=>await fixtureMutation(store.root,()=>store.save({action,payload,revision:store.load().revision}));
+ await save('daily-ignore',{id:'knowledge:profile'});store=(await openFileWorkspace(root));assert.equal(store.load().dailyActions.length,0);
+ await save('profile',{company:'A',products:'B',markets:'C',persona:'D',goal:'E'});await save('feedback',{leadId:'lead-1',source:'actual-call',cycleId:'cycle-1',result:'客户拒绝报价',reason:'交期',next:'核对交期信息'});
+ const action=store.load().dailyActions[0];await save('daily-defer',{id:action.id});assert.equal((await openFileWorkspace(root)).load().dailyActions.length,0);
+ const decisionFile=store.files('daily-decisions','.json').find(f=>store.json(f).id===action.id)!;const d=store.json(decisionFile);await fixtureMutation(store.root,()=>store.put(decisionFile,{...d,until:'2000-01-01T00:00:00Z'}));
+ await save('daily-create',{id:action.id});const state=(await openFileWorkspace(root)).load();assert.equal(state.tasks.length,1);assert.equal(state.tasks[0].status,'ready');assert.ok(state.tasks[0].invocation.includes(state.tasks[0].id));assert.ok(state.tasks[0].inputs.includes('交期'));assert.equal(state.dailyDecisions[action.id].taskId,state.tasks[0].id);await assert.rejects(async ()=>await save('daily-create',{id:action.id}),/建议已变化/);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
 test('sufficient candidates capped at five, completed and cancelled excluded',()=>{const c=dailyContext({workspace:{workspaceId:'w'},profile:{company:'A',products:'B',markets:'C',persona:'D',goal:'E'},skills,tasks:Array.from({length:8},(_,i)=>({id:String(i),name:'任务'+i,stage:'acquisition',status:i===0?'completed':i===1?'cancelled':'ready'}))});assert.equal(recommendDaily(c,'2026-10-08').length,5);assert.equal(recommendDaily(c,'2026-10-08',3).length,3);assert.equal(recommendDaily(c,'2026-10-08',0).length,0);});

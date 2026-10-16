@@ -1,5 +1,5 @@
 import { moduleForStage } from "../navigation/modules.js";
-export const crmFamilies = ['crm-companies', 'crm-contacts', 'crm-leads', 'crm-followups', 'crm-feedback-links'];
+export const crmFamilies = ['crm-members', 'crm-companies', 'crm-contacts', 'crm-leads', 'crm-followups', 'crm-feedback-links'];
 export const stages = ['new', 'contacted', 'replied', 'qualified', 'quoted', 'negotiating', 'won', 'lost'];
 export const validId = (v) => typeof v === 'string' && /^[a-f0-9]{32}$/.test(v);
 export function utc(v) { if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString().slice(0, 19) !== v.slice(0, 19))
@@ -9,12 +9,15 @@ export function normalize(family, input) {
     if (!object(input))
         throw Error('Invalid CRM input');
     const defaults = {
+        'crm-members': { name: '', externalMemberId: null, role: null, active: true },
         'crm-companies': { name: '', source: '', country: '', website: '', industry: '', productInterests: [], owner: '', tags: [] },
         'crm-contacts': { companyId: '', source: '', name: '', title: '', email: '', phone: '', whatsapp: '', linkedin: '', verificationStatus: 'unverified' },
         'crm-leads': { companyId: '', source: '', contactIds: [], sourceLeadId: '', opportunityId: null, sourceProjectId: null, owner: '', tags: [], productInterests: [] },
         'crm-followups': { leadId: '', time: '', method: '', content: '', result: '', nextStep: '', nextFollowUpAt: null, artifactIds: [], taskIds: [] }
     };
     const out = { ...defaults[family] };
+    if (family === 'crm-leads' && Object.hasOwn(input, 'ownerMemberId'))
+        out.ownerMemberId = input.ownerMemberId;
     if (!defaults[family])
         throw Error('Unknown CRM family');
     for (const key of Object.keys(out))
@@ -30,12 +33,18 @@ export function normalize(family, input) {
             if (actual !== null && (typeof actual !== 'string' || !actual.trim()))
                 throw Error('Invalid ' + key);
         }
+        else if (typeof value === 'boolean') {
+            if (typeof actual !== 'boolean')
+                throw Error('Invalid ' + key);
+        }
         else if (typeof actual !== 'string')
             throw Error('Invalid ' + key);
     }
-    for (const key of family === 'crm-companies' ? ['name', 'source'] : family === 'crm-followups' ? ['leadId', 'time', 'method', 'content'] : ['companyId', 'source'])
+    for (const key of family === 'crm-members' ? ['name'] : family === 'crm-companies' ? ['name', 'source'] : family === 'crm-followups' ? ['leadId', 'time', 'method', 'content'] : ['companyId', 'source'])
         if (!out[key].trim())
             throw Error('Missing ' + key);
+    if (Object.hasOwn(out, 'ownerMemberId') && out.ownerMemberId !== null && !validId(out.ownerMemberId))
+        throw Error('Invalid owner member ID');
     if (out.companyId && !validId(out.companyId) || out.leadId && !validId(out.leadId))
         throw Error('Invalid relationship ID');
     if (out.sourceProjectId !== undefined && out.sourceProjectId !== null) {
@@ -70,18 +79,25 @@ export function normalize(family, input) {
     return out;
 }
 export function validateCrmRecord(v, workspaceId, family) {
+    if (v?.entityVersion !== undefined && (!Number.isSafeInteger(v.entityVersion) || v.entityVersion < 0))
+        throw Error('Invalid entity version');
     if (typeof workspaceId !== 'string' || !workspaceId || !object(v) || !validId(v.id) || v.workspaceId !== workspaceId)
         throw Error('Invalid CRM identity or scope');
     if (family === 'crm-feedback-links') {
-        if (Object.keys(v).some(k => !['id', 'workspaceId', 'feedbackId', 'crmLeadId', 'confirmedAt'].includes(k)))
+        if (Object.keys(v).some(k => !['id', 'workspaceId', 'feedbackId', 'crmLeadId', 'confirmedAt', 'entityVersion'].includes(k)))
             throw Error('Unknown feedback link field');
         if (typeof v.feedbackId !== 'string' || !v.feedbackId || !validId(v.crmLeadId))
             throw Error('Invalid feedback link');
         utc(v.confirmedAt);
         return v;
     }
+    if (family === 'crm-members') {
+        if (v.source !== 'customer-import' || v.verification !== 'customer-confirmed' || typeof v.projectRef !== 'string' || !v.projectRef.trim())
+            throw Error('Invalid member provenance');
+        utc(v.confirmedAt);
+    }
     const normalized = normalize(family, v);
-    const allowed = [...Object.keys(normalized), 'id', 'workspaceId', 'createdAt', 'updatedAt', 'archivedAt', ...(family === 'crm-leads' ? ['stage', 'sourceLinks'] : family === 'crm-followups' ? ['kind', 'fromStage', 'toStage'] : [])];
+    const allowed = [...Object.keys(normalized), 'id', 'workspaceId', 'createdAt', 'updatedAt', 'archivedAt', 'entityVersion', ...(family === 'crm-members' ? ['source', 'verification', 'projectRef', 'confirmedAt'] : family === 'crm-leads' ? ['stage', 'sourceLinks'] : family === 'crm-followups' ? ['kind', 'fromStage', 'toStage'] : [])];
     if (Object.keys(v).some(k => !allowed.includes(k)))
         throw Error('Unknown persisted CRM field');
     for (const key of Object.keys(normalized))
@@ -141,6 +157,8 @@ export function validateCrmDataset(rows, workspaceId) {
             require('crm-companies', v.companyId);
         if (family === 'crm-leads' && v.opportunityId !== null && !rows.some(r => r.family === 'records' && r.value.stage === 'product-opportunity' && r.value.opportunityId === v.opportunityId && (r.value.workspaceId === undefined || r.value.workspaceId === workspaceId)))
             throw Error('Opportunity not established in this workspace');
+        if (family === 'crm-leads' && v.ownerMemberId !== undefined && v.ownerMemberId !== null)
+            require('crm-members', v.ownerMemberId);
         if (family === 'crm-leads')
             for (const id of v.contactIds) {
                 const contact = require('crm-contacts', id);

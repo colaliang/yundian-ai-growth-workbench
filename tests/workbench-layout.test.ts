@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {funnelRange,saveFunnelRange} from '../web/views/crm-funnel.js';
+const {navigation}=await import(new URL('../web/main.js',import.meta.url).href);
+test('primary navigation follows the requested order',()=>{assert.deepEqual(navigation.map(([id]:[string,string])=>id),['overview','knowledge','skills','content-operations','crm','schedules','settings']);});
+test('funnel dates share a workspace-scoped UI range and reject invalid saved ranges',()=>{const values=new Map<string,string>();const storage={getItem:(k:string)=>values.get(k)||null,setItem:(k:string,v:string)=>{values.set(k,v);}};saveFunnelRange('project-a',{from:'2026-09-01',to:'2026-09-07'},storage);assert.deepEqual(funnelRange('project-a',storage),{from:'2026-09-01',to:'2026-09-07'});assert.notDeepEqual(funnelRange('project-b',storage),funnelRange('project-a',storage));assert.throws(()=>saveFunnelRange('project-a',{from:'2026-10-02',to:'2026-10-01'},storage));assert.deepEqual(funnelRange('project-a',storage),{from:'2026-09-01',to:'2026-09-07'});});

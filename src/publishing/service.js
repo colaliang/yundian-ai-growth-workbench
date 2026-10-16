@@ -1,3 +1,4 @@
+import { runWorkspaceMutation, readWorkspaceSnapshot } from "../runtime/workspace.js";
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { ContentService, normalizeContent } from "../content/service.js";
@@ -29,85 +30,129 @@ export class PublicationService {
         throw Error('Daily credit limit exceeded'); if (allReserved + count > balance)
         throw Error('Available credit balance exceeded'); }
     day(at, timezone) { return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(at)); }
-    async preparePublish(itemId, input) { return this.queued(async () => { const item = this.approved(itemId), { publisher, secrets } = this.current(); if (!['immediate', 'scheduled'].includes(input.mode) || input.mode === 'immediate' && input.plannedAt !== null || input.mode === 'scheduled' && (!input.plannedAt || !date(input.plannedAt) || Date.parse(input.plannedAt) <= Date.now()))
-        throw Error('Invalid publishing schedule'); const old = this.listAttempts().filter(a => a.itemId === itemId && a.mode === 'scheduled' && a.postId && a.status !== 'failed'); const ack = input.acknowledgedAttemptIds ?? []; if (old.some(a => !ack.includes(a.id)))
-        throw Error('Acknowledge existing remote scheduled attempts'); if (input.channelIds.some(id => !item.channelIds.includes(id)))
-        throw Error('Channel not selected in approved content'); await this.targets(publisher, input.channelIds, item.remoteMediaIds); const { balance } = await publisher.getBalance(); if (input.mode === 'scheduled' && Date.parse(input.plannedAt) <= Date.now())
-        throw Error('Invalid publishing schedule'); const fresh = this.current(); if (fresh.secrets.apiKey !== secrets.apiKey || this.approved(itemId).contentHash !== item.contentHash)
-        throw Error('Confirmation context changed'); this.budget(fresh.secrets, input.channelIds.length, this.day(input.plannedAt ?? new Date().toISOString(), quotaTimezone), balance); const c = { id: uuid(), workspaceId: this.content.workspaceId, itemId, contentHash: item.contentHash, channelIds: [...input.channelIds], mode: input.mode, plannedAt: input.plannedAt, maxCredits: input.channelIds.length, balance, expiresAt: new Date(Date.now() + 600000).toISOString(), accountFingerprint: fingerprint(secrets.apiKey), acknowledgedAttemptIds: [...ack], approvedContent: structuredClone(normalizeContent(item)) }; this.store.put(path.join(this.store.base, 'publish-confirmations', c.id + '.json'), c); return c; }); }
-    async submitPublish(itemId, confirmationId) { return this.queued(async () => { const existing = this.listAttempts().find(a => a.confirmationId === confirmationId && a.itemId === itemId); if (existing)
-        return existing; const c = this.rows('publish-confirmations').find(c => c.id === confirmationId && c.itemId === itemId); if (!c || Date.parse(c.expiresAt) <= Date.now())
-        throw Error('Confirmation expired or unavailable'); const item = this.approved(itemId); if (item.contentHash !== c.contentHash)
-        throw Error('Confirmed content changed'); if (this.listAttempts().some(a => a.itemId === itemId && a.mode === 'scheduled' && a.postId && a.status !== 'failed' && !c.acknowledgedAttemptIds.includes(a.id)))
-        throw Error('Acknowledge existing remote scheduled attempts'); const prior = this.listAttempts().filter(a => a.itemId === itemId && a.contentHash === c.contentHash); if (c.channelIds.some((id) => prior.some(a => a.channelIds.includes(id) && !(a.phase === 'settled' && a.results.find(r => r.channelId === id)?.status === 'failed' && !a.results.find(r => r.channelId === id)?.pending))))
-        throw Error('Channel already submitted or unresolved'); const { publisher, secrets } = this.current(); if (fingerprint(secrets.apiKey) !== c.accountFingerprint)
-        throw Error('Publisher configuration changed'); await this.targets(publisher, c.channelIds, item.remoteMediaIds); const { balance } = await publisher.getBalance(); const latest = this.current(); if (latest.secrets.apiKey !== secrets.apiKey)
-        throw Error('Publisher configuration changed'); if (this.approved(itemId).contentHash !== c.contentHash)
-        throw Error('Confirmed content changed'); if (Date.parse(c.expiresAt) <= Date.now())
-        throw Error('Confirmation expired'); if (c.mode === 'scheduled' && Date.parse(c.plannedAt) <= Date.now())
-        throw Error('Invalid publishing schedule'); const day = this.day(c.plannedAt ?? new Date().toISOString(), quotaTimezone); this.budget(latest.secrets, c.maxCredits, day, balance); const approvedContent = structuredClone(c.approvedContent ?? normalizeContent(item)); const submittedPayload = { content: approvedContent.text, channelIds: [...c.channelIds], mediaIds: [...approvedContent.remoteMediaIds], ...(c.mode === 'scheduled' ? { scheduledAt: c.plannedAt } : {}) }; let a = { approvedContent, submittedPayload: structuredClone(submittedPayload), id: uuid(), workspaceId: this.content.workspaceId, itemId, confirmationId, contentHash: c.contentHash, channelIds: c.channelIds, mode: c.mode, plannedAt: c.plannedAt, budgetDay: day, maxCredits: c.maxCredits, reservedCredits: c.maxCredits, actualCredits: null, idempotencyKey: crypto.createHash('sha256').update(JSON.stringify([this.content.workspaceId, c.contentHash, c.channelIds.slice().sort(), c.mode, c.plannedAt, c.id])).digest('hex'), status: 'publishing', phase: 'creating', postId: null, scheduledAt: null, results: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), error: null }; this.save(a); try {
-        const post = await publisher.createPost(structuredClone(submittedPayload));
-        validateRemotePost(post, c.channelIds);
-        a.postId = post.id;
-        a.scheduledAt = post.scheduledAt;
-        if (c.mode === 'scheduled') {
-            a.results = post.postChannels;
-            a.status = scheduledEvidence(post, c.channelIds, c.plannedAt) ? 'scheduled' : 'unknown';
-            a.phase = 'settled';
-            return this.save(a);
-        }
-        a.phase = 'publishing';
-        this.save(a);
-        if (Date.parse(c.expiresAt) <= Date.now())
-            throw Error('Confirmation expired');
-        const fresh = this.current();
-        if (fresh.secrets.apiKey !== secrets.apiKey)
-            throw Error('Publisher configuration changed');
-        requirePublisherBudget(fresh.secrets, c.maxCredits);
-        if (this.listAttempts().filter(x => x.budgetDay === day).reduce((n, x) => n + x.reservedCredits, 0) > fresh.secrets.maxCreditsPerDay)
-            throw Error('Daily credit limit changed');
-        if (this.approved(itemId).contentHash !== c.contentHash)
-            throw Error('Confirmed content changed');
-        const result = await fresh.publisher.publishPost(a.postId);
-        if (result.postId !== a.postId)
-            throw Error('Post mismatch');
-        validateRemoteResults(result.results, a.channelIds);
-        a.results = result.results;
-        a.phase = 'settled';
-        a.status = this.status(a);
-        return this.save(a);
+    read(work) { return readWorkspaceSnapshot(this.store.root, work); }
+    mutate(work, options = {}) { return runWorkspaceMutation(this.store.root, options, work); }
+    persist(a, patch) { return this.mutate(() => { const current = this.rows('publish-attempts').find(x => x.id === a.id); if (!current || current.idempotencyKey !== a.idempotencyKey)
+        throw Error('Attempt changed'); if ((current.entityVersion ?? 0) !== (a.entityVersion ?? 0))
+        return current; return this.save({ ...current, ...patch }); }); }
+    async preparePublish(itemId, input, options = {}) {
+        return this.queued(async () => {
+            const item = await this.read(() => this.approved(itemId)), { publisher, secrets } = this.current();
+            if (!['immediate', 'scheduled'].includes(input.mode) || input.mode === 'immediate' && input.plannedAt !== null || input.mode === 'scheduled' && (!input.plannedAt || !date(input.plannedAt) || Date.parse(input.plannedAt) <= Date.now()))
+                throw Error('Invalid publishing schedule');
+            if (input.channelIds.some(id => !item.channelIds.includes(id)))
+                throw Error('Channel not selected in approved content');
+            await this.targets(publisher, input.channelIds, item.remoteMediaIds);
+            const { balance } = await publisher.getBalance();
+            return this.mutate(() => {
+                const fresh = this.current(), current = this.approved(itemId);
+                if (fresh.secrets.apiKey !== secrets.apiKey || current.contentHash !== item.contentHash)
+                    throw Error('Confirmation context changed');
+                if (input.mode === 'scheduled' && Date.parse(input.plannedAt) <= Date.now())
+                    throw Error('Invalid publishing schedule');
+                const ack = input.acknowledgedAttemptIds ?? [], old = this.listAttempts().filter(a => a.itemId === itemId && a.mode === 'scheduled' && a.postId && a.status !== 'failed');
+                if (old.some(a => !ack.includes(a.id)))
+                    throw Error('Acknowledge existing remote scheduled attempts');
+                this.budget(fresh.secrets, input.channelIds.length, this.day(input.plannedAt ?? new Date().toISOString(), quotaTimezone), balance);
+                const c = { id: uuid(), workspaceId: this.content.workspaceId, itemId, contentHash: item.contentHash, channelIds: [...input.channelIds], mode: input.mode, plannedAt: input.plannedAt, maxCredits: input.channelIds.length, balance, expiresAt: new Date(Date.now() + 600000).toISOString(), accountFingerprint: fingerprint(secrets.apiKey), acknowledgedAttemptIds: [...ack], approvedContent: structuredClone(normalizeContent(item)) };
+                this.store.put(path.join(this.store.base, 'publish-confirmations', c.id + '.json'), c);
+                return c;
+            }, options);
+        });
     }
-    catch {
-        a.status = 'unknown';
-        a.error = 'Remote result unresolved; refresh only, no automatic resend';
-        return this.save(a);
-    } }); }
+    async submitPublish(itemId, confirmationId, options = {}) {
+        return this.queued(async () => {
+            const pre = await this.read(() => { const existing = this.listAttempts().find(a => a.confirmationId === confirmationId && a.itemId === itemId); if (existing)
+                return { existing }; const c = this.rows('publish-confirmations').find(c => c.id === confirmationId && c.itemId === itemId); if (!c || Date.parse(c.expiresAt) <= Date.now())
+                throw Error('Confirmation expired or unavailable'); return { c, item: this.approved(itemId) }; });
+            if (pre.existing)
+                return pre.existing;
+            const { c, item } = pre, { publisher, secrets } = this.current();
+            if (fingerprint(secrets.apiKey) !== c.accountFingerprint)
+                throw Error('Publisher configuration changed');
+            await this.targets(publisher, c.channelIds, item.remoteMediaIds);
+            const { balance } = await publisher.getBalance();
+            const reservation = await this.mutate(() => {
+                const existing = this.listAttempts().find(a => a.confirmationId === confirmationId && a.itemId === itemId);
+                if (existing)
+                    return { a: existing, created: false };
+                const latest = this.current(), current = this.approved(itemId);
+                if (latest.secrets.apiKey !== secrets.apiKey)
+                    throw Error('Publisher configuration changed');
+                if (current.contentHash !== c.contentHash)
+                    throw Error('Confirmed content changed');
+                if (Date.parse(c.expiresAt) <= Date.now())
+                    throw Error('Confirmation expired');
+                if (c.mode === 'scheduled' && Date.parse(c.plannedAt) <= Date.now())
+                    throw Error('Invalid publishing schedule');
+                const rows = this.listAttempts();
+                if (rows.some(a => a.itemId === itemId && a.mode === 'scheduled' && a.postId && a.status !== 'failed' && !c.acknowledgedAttemptIds.includes(a.id)))
+                    throw Error('Acknowledge existing remote scheduled attempts');
+                const prior = rows.filter(a => a.itemId === itemId && a.contentHash === c.contentHash);
+                if (c.channelIds.some((id) => prior.some(a => a.channelIds.includes(id) && !(a.phase === 'settled' && a.results.find(r => r.channelId === id)?.status === 'failed' && !a.results.find(r => r.channelId === id)?.pending))))
+                    throw Error('Channel already submitted or unresolved');
+                const day = this.day(c.plannedAt ?? new Date().toISOString(), quotaTimezone);
+                this.budget(latest.secrets, c.maxCredits, day, balance);
+                const approvedContent = structuredClone(c.approvedContent ?? normalizeContent(current)), submittedPayload = { content: approvedContent.text, channelIds: [...c.channelIds], mediaIds: [...approvedContent.remoteMediaIds], ...(c.mode === 'scheduled' ? { scheduledAt: c.plannedAt } : {}) };
+                const a = { approvedContent, submittedPayload: structuredClone(submittedPayload), id: uuid(), workspaceId: this.content.workspaceId, itemId, confirmationId, contentHash: c.contentHash, channelIds: [...c.channelIds], mode: c.mode, plannedAt: c.plannedAt, budgetDay: day, maxCredits: c.maxCredits, reservedCredits: c.maxCredits, actualCredits: null, idempotencyKey: crypto.createHash('sha256').update(JSON.stringify([this.content.workspaceId, c.contentHash, c.channelIds.slice().sort(), c.mode, c.plannedAt, c.id])).digest('hex'), status: 'publishing', phase: 'creating', postId: null, scheduledAt: null, results: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), error: null };
+                return { a: this.save(a), created: true };
+            }, options);
+            let a = reservation.a;
+            if (!reservation.created)
+                return a;
+            try {
+                const post = await publisher.createPost(structuredClone(a.submittedPayload));
+                validateRemotePost(post, c.channelIds);
+                if (c.mode === 'scheduled')
+                    return this.persist(a, { postId: post.id, scheduledAt: post.scheduledAt, results: post.postChannels, status: scheduledEvidence(post, c.channelIds, c.plannedAt) ? 'scheduled' : 'unknown', phase: 'settled' });
+                a = await this.persist(a, { postId: post.id, scheduledAt: post.scheduledAt, phase: 'publishing' });
+                if (a.phase === 'settled')
+                    return a;
+                const fresh = await this.read(() => { const current = this.current(); if (Date.parse(c.expiresAt) <= Date.now())
+                    throw Error('Confirmation expired'); if (current.secrets.apiKey !== secrets.apiKey)
+                    throw Error('Publisher configuration changed'); requirePublisherBudget(current.secrets, c.maxCredits); if (this.listAttempts().filter(x => x.budgetDay === a.budgetDay).reduce((n, x) => n + x.reservedCredits, 0) > current.secrets.maxCreditsPerDay)
+                    throw Error('Daily credit limit changed'); if (this.approved(itemId).contentHash !== c.contentHash)
+                    throw Error('Confirmed content changed'); return current; });
+                const result = await fresh.publisher.publishPost(a.postId);
+                if (result.postId !== a.postId)
+                    throw Error('Post mismatch');
+                validateRemoteResults(result.results, a.channelIds);
+                return this.persist(a, { results: result.results, phase: 'settled', status: this.status({ ...a, results: result.results }) });
+            }
+            catch {
+                return this.persist(a, { status: 'unknown', error: 'Remote result unresolved; refresh only, no automatic resend' });
+            }
+        });
+    }
     status(a) { const selected = a.channelIds.map(id => a.results.find(r => r.channelId === id)); const success = selected.filter(r => r?.status === 'published' && !r.pending).length; if (success === selected.length)
         return 'published'; if (success)
         return 'partial'; if (selected.every(r => r?.status === 'failed' && !r.pending))
         return 'failed'; if (selected.some(r => r?.pending || ['processing', 'publishing'].includes(r?.status ?? '')))
         return 'publishing'; return 'unknown'; }
-    async refreshAttempt(id) { return this.queued(async () => { const a = this.listAttempts().find(a => a.id === id); if (!a)
-        throw Error('Attempt unavailable'); if (!a.postId)
-        return a; try {
-        const c = this.rows('publish-confirmations').find(c => c.id === a.confirmationId);
-        const before = this.current();
-        if (!c || fingerprint(before.secrets.apiKey) !== c.accountFingerprint)
-            throw Error('Publisher account changed');
-        const post = await before.publisher.getPost(a.postId);
-        if (fingerprint(this.current().secrets.apiKey) !== c.accountFingerprint)
-            throw Error('Publisher account changed');
-        validateRemotePost(post, a.channelIds);
-        if (post.id !== a.postId)
-            throw Error('Post mismatch');
-        a.results = post.postChannels;
-        a.scheduledAt = post.scheduledAt;
-        a.status = a.mode === 'scheduled' && scheduledEvidence(post, a.channelIds, a.plannedAt) ? 'scheduled' : this.status(a);
-        a.phase = 'settled';
-        a.error = null;
+    async refreshAttempt(id, options = {}) {
+        return this.queued(async () => {
+            const data = await this.read(() => { const a = this.listAttempts().find(a => a.id === id); if (!a)
+                throw Error('Attempt unavailable'); return { a, c: this.rows('publish-confirmations').find(c => c.id === a.confirmationId) }; });
+            const { a, c } = data;
+            if (!a.postId)
+                return a;
+            let patch;
+            try {
+                const before = this.current();
+                if (!c || fingerprint(before.secrets.apiKey) !== c.accountFingerprint)
+                    throw Error('Publisher account changed');
+                const post = await before.publisher.getPost(a.postId);
+                if (fingerprint(this.current().secrets.apiKey) !== c.accountFingerprint)
+                    throw Error('Publisher account changed');
+                validateRemotePost(post, a.channelIds);
+                if (post.id !== a.postId)
+                    throw Error('Post mismatch');
+                patch = { results: post.postChannels, scheduledAt: post.scheduledAt, status: a.mode === 'scheduled' && scheduledEvidence(post, a.channelIds, a.plannedAt) ? 'scheduled' : this.status({ ...a, results: post.postChannels }), phase: 'settled', error: null };
+            }
+            catch {
+                patch = { status: 'unknown', error: 'Remote lookup unresolved' };
+            }
+            return this.persist(a, patch);
+        });
     }
-    catch {
-        a.status = 'unknown';
-        a.error = 'Remote lookup unresolved';
-    } return this.save(a); }); }
 }

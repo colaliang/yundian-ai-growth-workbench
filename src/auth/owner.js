@@ -1,7 +1,5 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
+import { readInstanceConfig, writeInstanceConfig } from "../runtime/instance.js";
 const sessions = new WeakMap();
 export function createOwnerConfig(publicMode, passwordHash, sessionTtlSeconds = 86400) { const config = { publicMode, passwordHash, sessionTtlSeconds }; sessions.set(config, new Map()); return config; }
 export function hashPassword(password) { if (!password || password.length > 1024)
@@ -10,19 +8,19 @@ export function verifyPassword(password, hash) { if (typeof password !== 'string
     return false; const match = /^scrypt\$([a-f0-9]{32})\$([a-f0-9]{128})$/.exec(hash); if (!match)
     return false; return crypto.timingSafeEqual(crypto.scryptSync(password, match[1], 64), Buffer.from(match[2], 'hex')); }
 const cookie = (req) => (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith('wb_owner='))?.slice(9) || '';
-export function authorizeOwner(req, config) { if (!config.publicMode)
+export function authorizeOwner(req, config, nowMs = Date.now()) { if (!config.publicMode)
     return { allowed: true, loginRequired: false, setupRequired: false }; if (!config.passwordHash)
-    return { allowed: false, loginRequired: false, setupRequired: true }; const key = cookie(req), map = sessions.get(config), expires = map?.get(key) || 0; const allowed = expires > Date.now(); if (!allowed)
+    return { allowed: false, loginRequired: false, setupRequired: true }; const map = sessions.get(config); if (map)
+    pruneSessions(map, nowMs); const key = cookie(req), expires = map?.get(key) || 0; const allowed = expires > nowMs; if (!allowed)
     map?.delete(key); return { allowed, loginRequired: !allowed, setupRequired: false }; }
-export function issueOwnerSession(config) { let map = sessions.get(config); if (!map) {
+function pruneSessions(map, nowMs) { for (const [key, expires] of map)
+    if (expires <= nowMs)
+        map.delete(key); }
+export function issueOwnerSession(config, nowMs = Date.now()) { let map = sessions.get(config); if (!map) {
     map = new Map();
     sessions.set(config, map);
-} const key = crypto.randomBytes(32).toString('base64url'); map.set(key, Date.now() + config.sessionTtlSeconds * 1000); return key; }
+} pruneSessions(map, nowMs); while (map.size >= 1000)
+    map.delete(map.keys().next().value); const key = crypto.randomBytes(32).toString('base64url'); map.set(key, nowMs + config.sessionTtlSeconds * 1000); return key; }
 export function revokeOwnerSession(req, config) { sessions.get(config)?.delete(cookie(req)); }
-export function privateConfigDirectory(appRoot) { const value = path.join(os.homedir(), '.workbench-private', crypto.createHash('sha256').update(path.resolve(appRoot)).digest('hex')); return value; }
-export function loadOwnerConfig(appRoot, publicMode) { const file = path.join(privateConfigDirectory(appRoot), 'owner.json'); let hash = null; if (fs.existsSync(file)) {
-    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (typeof value.passwordHash === 'string')
-        hash = value.passwordHash;
-} return createOwnerConfig(publicMode, hash); }
-export function saveOwnerPassword(appRoot, password) { const dir = privateConfigDirectory(appRoot); fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); fs.writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ passwordHash: hashPassword(password) }), { mode: 0o600 }); }
+export function loadOwnerConfig(ctx, publicMode) { const value = readInstanceConfig(ctx, 'owner'); return createOwnerConfig(publicMode, typeof value.passwordHash === 'string' ? value.passwordHash : null); }
+export function saveOwnerPassword(ctx, password) { writeInstanceConfig(ctx, 'owner', { passwordHash: hashPassword(password) }); }

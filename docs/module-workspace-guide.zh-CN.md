@@ -25,3 +25,21 @@
 每客户独立目录，默认127.0.0.1本地运行。公网单客户单实例先在服务器本地设置指定口令环境变量，运行node scripts/configure-owner.mjs WORKBENCH_OWNER_PASSWORD，清除口令变量并重启。配置保存在真实用户主目录私密目录，不进入源码/客户快照；缺配置显示setupRequired，未登录返回401。HTTPS或受可信TLS代理保护，WORKBENCH_TRUST_PROXY=1仅在代理覆盖转发头且隔离后端直连时启用。保持setup启动与宿主唤醒流程，服务在线和WorkBuddy原生定时各自验证。
 
 快照覆盖content-items、publish-attempts、publish-confirmations、crm-companies、crm-contacts、crm-leads、crm-followups、crm-feedback-links。恢复前校验空间、哈希和实体引用，保留冲突双方。代码回滚保留新目录及外部发布事实；回滚不撤回远端已发内容。技能17个独立ZIP和总包18件仅从skills目录打包，manifest按原文件SHA-256比较；同名客户定制保留，先独立暂存官方更新。本地构建与浏览器验证不能冒充公网部署、原生宿主执行或真实收费验收。
+
+<!-- workbench-ui:begin -->
+一级导航：工作台、企业知识库、营销推广、内容运营、客户管理、定时任务、设置。
+营销推广包含12个子项目，各占一行；内容运营只在一级出现。保留13个项目、15个执行阶段及历史SEO/GEO入口。
+免费项目：市场调研、产品机会、客户背调、销售反馈，无专家咨询窗口；其余项目页末按钮按需打开，二维码仍为占位，不自动发送客户资料。
+<!-- workbench-ui:end -->
+
+## 第一批工作台确认与 CRM 接线
+
+先读取当前客户项目的本地知识、来源和当前 contentHash；知识确认只表示客户确认这些字节，知识健康与任务 ready/needs-review/completed 分开。首次使用补全企业、产品、市场、买家、目标五项事实并确认当前知识后创建第一项任务；复制指令、安装文件和名单导入都不代表 WorkBuddy 实际执行。
+
+成员由客户提供真实项目名单，工作台 `/api/crm/members/import/preview` 预览并逐项决定，`/api/crm/members/import/confirm` 要求 confirmed:true。source 为 customer-import、verification 为 customer-confirmed，不能声称原生成员 API 自动同步。以稳定 ownerMemberId 关联负责人；同名不自动匹配，旧 owner 文本保留，停用成员不能新指派。
+
+公司、联系人、线索与下次跟进通过 `/api/crm/lead-records` 完整创建/编辑，输入分为 company、contacts、lead；客户确认 shared/source 修改后才写入。来源候选用 `/api/crm/import/preview` 预览，客户逐项确认 create/skip/link-existing 后入库；保留来源、外部 sourceLeadId 与内部稳定 crmLeadId，不由 AI 自动合并或生成真实联系人。以上 API 均沿用所有者认证、客户 workspaceId、当前 revision 和工作区令牌；遇到 401/409 保留输入，重新认证或核对后由客户明确保存，不自动重提交。
+
+列表和 `/api/crm/export` 采用同一组合筛选：公司/联系人查询、国家、来源、阶段、标签、负责人、跟进日期。selected 只导出当前筛选内明确勾选 ID，filtered 导出全部筛选结果而非当前分页；客户确认字段/范围后下载真实 UTF-8 BOM CSV，长电话与公式文本安全保存。销售反馈由真实客户记录并明确关联当前线索后进入下一轮，名单数量、背调预测和草稿不代表成交。
+
+普通快照仅覆盖 growth-workspace；客户 `.codebuddy/skills` 全目录、外部附件和工作区外产物须另行备份。官方安装核对 SKILL.md 及所需资源/共享脚本，任何同名不同字节的定制文件都保留，先独立暂存官方版本并审阅。应用 0.15.0、现有技能 0.16.0 的本次交付为 working-tree、published:false；未创建正式发布或部署。原生宿主执行、成员 API、云同步、真实发布与付费效果均待真实授权和回执验证。

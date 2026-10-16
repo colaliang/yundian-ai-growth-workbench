@@ -23,7 +23,7 @@ description: Use when preparing or reviewing 邮件开发 work for B2B acquisiti
 ## 官方来源
 - https://support.google.com/mail/answer/81126（2026-10-08检查；执行前核对最新页面和具体平台条件）。
 
-安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。仅旧版无工作台元数据且非定时的未终结任务保留独立回写。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
+安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。旧版任务也必须通过实际工作台迁移及同一事务登记；缺少实际应用不独立修改文件。Python兼容入口调用同一Node脚本，需要Node.js22.18+。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
 
 应用任务的已安装回写命令必须带 --application "实际工作台应用目录"（复制指令提供），并与任务位置匹配；不能把客户任务或产物指定的目录自动作为代码加载。Python 命令同样支持此参数。能力不足时停止登记。
 

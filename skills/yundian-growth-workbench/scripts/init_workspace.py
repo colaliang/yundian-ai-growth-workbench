@@ -6,10 +6,44 @@ import json
 from pathlib import Path
 import uuid
 
+def assert_standalone_knowledge_root(root):
+    guidance = 'Managed workspace: use Node.js 22.18+ and the actual workbench scripts/workbench.mjs --root CUSTOMER_PROJECT --command state; this legacy initializer will not write'
+    base = root / 'growth-workspace'
+    manifest = base / 'workspace.json'
+    if manifest.is_symlink():
+        raise ValueError('Workspace manifest symlink rejected; ' + guidance)
+    if manifest.exists():
+        if not manifest.is_file():
+            raise ValueError('Invalid workspace manifest; ' + guidance)
+        try:
+            value = json.loads(manifest.read_text(encoding='utf-8-sig'))
+        except (ValueError, UnicodeError):
+            raise ValueError('Malformed workspace manifest; ' + guidance) from None
+        if not isinstance(value, dict):
+            raise ValueError('Invalid workspace manifest; ' + guidance)
+        if 'contractVersion' in value:
+            raise ValueError(guidance)
+    if (base / 'workbench.json').exists() or (base / 'workbench.json').is_symlink() or (root / '.workbench-runtime').exists() or (root / '.workbench-runtime').is_symlink():
+        raise ValueError(guidance)
+    tasks = base / 'tasks'
+    if tasks.is_symlink() or (tasks.exists() and hasattr(tasks, 'is_junction') and tasks.is_junction()):
+        raise ValueError('Task directory symlink rejected; ' + guidance)
+    if tasks.is_dir():
+        for file in tasks.glob('*.json'):
+            if file.is_symlink():
+                raise ValueError('Task symlink rejected; ' + guidance)
+            try:
+                task = json.loads(file.read_text(encoding='utf-8-sig'))
+            except (ValueError, UnicodeError):
+                raise ValueError('Malformed task; ' + guidance) from None
+            if isinstance(task, dict) and (task.get('applicationRoot') or task.get('application')):
+                raise ValueError(guidance)
+
 def initialize(root):
     root = Path(root).resolve(strict=True)
     if not root.is_dir():
         raise ValueError('Project root must be an existing directory')
+    assert_standalone_knowledge_root(root)
     base = root / 'growth-workspace'
     files = {
         'workspace.json': json.dumps({

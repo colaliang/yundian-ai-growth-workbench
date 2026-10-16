@@ -30,8 +30,8 @@
       "files": [
         {
           "path": "yundian-growth-acquisition/SKILL.md",
-          "sha256": "308c1b138f510e982ea85dc25de08eec4ba47737056831f48864d919f8c3f4de",
-          "size": 4883
+          "sha256": "9ccd044dbc84cdc71f0ebaa777d7d1d4f99724d9f1faffcac077cb863f1612ba",
+          "size": 4981
         }
       ]
     },
@@ -57,8 +57,8 @@
         },
         {
           "path": "yundian-growth-buyer-check/SKILL.md",
-          "sha256": "07f4345d6a767100f9dcb205e84cca6f8d2acbb6ffe62f3c40fa91b72407e7a1",
-          "size": 6114
+          "sha256": "f910ba7f2606f6b4b4d3a3cfa1b64f1252819a9e5a955b36c439131e15f28a7b",
+          "size": 8636
         }
       ]
     },
@@ -69,8 +69,8 @@
       "files": [
         {
           "path": "yundian-growth-content-operations/SKILL.md",
-          "sha256": "122f22ebf753cd73e0ca3ad465a71a9a3f1e48c13d5dbd1d44121d21b4b5cf9d",
-          "size": 4525
+          "sha256": "832b10585b3701ede9401d5f291781863ad41f51442e76ae55d67e27fe3fc8a2",
+          "size": 4623
         }
       ]
     },
@@ -81,8 +81,8 @@
       "files": [
         {
           "path": "yundian-growth-email-outreach/SKILL.md",
-          "sha256": "26a3e2b7c75a84cf8fab6998454f985f1cfca39bd920ff32f5d65d4448dc553d",
-          "size": 3584
+          "sha256": "e31e8338e8158564a18c56080cf4f420af0d4d5e1abe076a8484643586a8b32f",
+          "size": 3682
         }
       ]
     },
@@ -93,8 +93,8 @@
       "files": [
         {
           "path": "yundian-growth-facebook-ads/SKILL.md",
-          "sha256": "effd0571575a66c5d7737e117a765b5883e568dab71c87e947c1eb3d1475c4ed",
-          "size": 2942
+          "sha256": "71af4dcfbbacc8cfcfdff9048e17f2074f4459af11214edf7c25b486a59e4348",
+          "size": 3040
         }
       ]
     },
@@ -105,8 +105,8 @@
       "files": [
         {
           "path": "yundian-growth-geo/SKILL.md",
-          "sha256": "495d58a7e77d8e19e57f85d25e8164406bd3870213ed927ba5d8657c5e19a63a",
-          "size": 2646
+          "sha256": "a78efe72a838c617d843ee9d54aa123520de5efbef5c53e88eafd8709e0fc692",
+          "size": 2744
         }
       ]
     },
@@ -117,8 +117,8 @@
       "files": [
         {
           "path": "yundian-growth-google-ads/SKILL.md",
-          "sha256": "77c6b6af3b1bb2fe6f2a582bba7141bfa97fb2fe3426a018531e6c4392d843d7",
-          "size": 2762
+          "sha256": "6ec7c5d253f64ff9dde414285f91aaa547abcff0ba372795c2a115cfd9328ed0",
+          "size": 2860
         }
       ]
     },
@@ -139,8 +139,8 @@
         },
         {
           "path": "yundian-growth-knowledge/SKILL.md",
-          "sha256": "327aa78ad0ce1ecd915cf3bf5db2330e240fca3e1354c4d81d08b1719e8a0e72",
-          "size": 4146
+          "sha256": "ce18cd497ffcf6513a22c5b24518899c7c72c2b6fdf8776abb24090336138e0c",
+          "size": 4511
         }
       ]
     },
@@ -171,8 +171,8 @@
         },
         {
           "path": "yundian-growth-market-research/SKILL.md",
-          "sha256": "565217bcfeca999a6041c4ecfd03d4f00fc24edcc85d8c2a7dc59d83cee2ec1e",
-          "size": 5132
+          "sha256": "9e11bb8fe6fc5cc33b0f9af6e35e90a06b082c1f933157a1746d9f1f21dc698b",
+          "size": 5230
         }
       ]
     },
@@ -183,8 +183,8 @@
       "files": [
         {
           "path": "yundian-growth-next-cycle/SKILL.md",
-          "sha256": "adfac375fb52ed928cdfd6ed86bab2dd6a0f4948e02d1690232103fbf9709337",
-          "size": 3313
+          "sha256": "4829523b6add913a040b63924ebd6ce581ba6fb165d8f311739d794f54c7df00",
+          "size": 3411
         }
       ]
     },
@@ -210,8 +210,8 @@
         },
         {
           "path": "yundian-growth-product-opportunity/SKILL.md",
-          "sha256": "8be1a23012dddf3c249bcd8145bdb1e61de83e4cc69da1967abc0425f62183f0",
-          "size": 5269
+          "sha256": "be7c91dfc0a2427cf0190c617a95002ee0743225c74c6bdab4949d57b7d4ae4f",
+          "size": 5367
         }
       ]
     },
@@ -222,8 +222,8 @@
       "files": [
         {
           "path": "yundian-growth-sales-feedback/SKILL.md",
-          "sha256": "256cdb92e48235c7e0313f7ccbdbd314f8775a8d930c76529983b1a4551f6190",
-          "size": 3989
+          "sha256": "4e2acb6f090212efbe5020bf8352de349aef01aa8186478ea418e7207a1e4b5f",
+          "size": 6511
         }
       ]
     },
@@ -234,8 +234,8 @@
       "files": [
         {
           "path": "yundian-growth-seo/SKILL.md",
-          "sha256": "ee45a0315e96dab46e49654ea2ebe4b873ff48fe8ac8da0ca59f466a311bf038",
-          "size": 2661
+          "sha256": "889503e7203e4fdf26e702fc1c1677a03b6739889bb56c66330f3296f7a176aa",
+          "size": 2759
         }
       ]
     },
@@ -271,8 +271,8 @@
         },
         {
           "path": "yundian-growth-seo-geo/SKILL.md",
-          "sha256": "6bbfc64392664bef8d1498703f05879f0d61432739e9c62e020b671630b032cb",
-          "size": 6008
+          "sha256": "0972b00ccbe7b51bb1022709ca47c0cff583012039e8392f274bc95d568f95da",
+          "size": 6106
         }
       ]
     },
@@ -283,8 +283,8 @@
       "files": [
         {
           "path": "yundian-growth-site-and-content/SKILL.md",
-          "sha256": "8e85bee36371180bd62ca3d04e57213669b38cd5aa0f8ecdb389f895dca6278d",
-          "size": 3022
+          "sha256": "49455367f2a53a0449d087154a5772ee1106e90b40b38c84a2b97da1cfde43ce",
+          "size": 3120
         }
       ]
     },
@@ -295,8 +295,8 @@
       "files": [
         {
           "path": "yundian-growth-social-media/SKILL.md",
-          "sha256": "e74db15cee15ed06f0c3fd00f90c12d4ad7d7d3d63572bef071868945f1f571d",
-          "size": 3802
+          "sha256": "9956f6fc4acf8771f1ec1385af6ae48ece7773535dd180b1cc6c29a8ed4f879e",
+          "size": 3900
         }
       ]
     },
@@ -307,8 +307,8 @@
       "files": [
         {
           "path": "yundian-growth-workbench/references/BUILD_BRIEF.md",
-          "sha256": "86fe4111ae8a3c9fa9d054320a4b921af59cf0bb5214ffa0d99d723878ae9b40",
-          "size": 1509
+          "sha256": "4d5a4230da39fa822787ac7aae2d002fd8793e9548151c4eb2af547c75edec54",
+          "size": 1895
         },
         {
           "path": "yundian-growth-workbench/references/MODULES.json",
@@ -317,28 +317,28 @@
         },
         {
           "path": "yundian-growth-workbench/references/WORKFLOWS.md",
-          "sha256": "480d4e1b0177db645e532c9f2660712302d126603d379d46d9f602a630896b13",
-          "size": 3255
+          "sha256": "649e38132445f755a24d8c27ac8cb99a0da664aeca92bef7cf295c4ad2f8e388",
+          "size": 7488
         },
         {
           "path": "yundian-growth-workbench/scripts/init_workspace.py",
-          "sha256": "5b77b42a199e4c8356ae4313c66a9aa2f9f4d665fd9266d32efc7a77b9fe1855",
-          "size": 4377
+          "sha256": "ea5f8d934ead3f38027c9aeee156c8904ccbe5ca521e5020640649372cc1a223",
+          "size": 6302
         },
         {
           "path": "yundian-growth-workbench/scripts/submit_result.mjs",
-          "sha256": "45953c9a085cfd0d76ac2e7aefa92e5c0f297ea0b34c00124264c79002ee2cbd",
-          "size": 6042
+          "sha256": "5614f2830ebadef314a1023d6fd0143614e97d161587750f6488e86842a0d569",
+          "size": 4656
         },
         {
           "path": "yundian-growth-workbench/scripts/submit_result.py",
-          "sha256": "8bbe09c894251a3179281a201600244109e12fb5d4c708000dfe1395369b6ee7",
-          "size": 3311
+          "sha256": "7bdcb952c79b933c0c64fa3ce635fc72bfdc4ab08974cd2f9a709665405dd67c",
+          "size": 1487
         },
         {
           "path": "yundian-growth-workbench/SKILL.md",
-          "sha256": "0a40813bec467e089d31dad3e08cc322dd42e1e23b36b6e4b1deef73c7a3c689",
-          "size": 5599
+          "sha256": "0c90d41a0780348d73debc7a3f72489b6da31f9f41d3928bd5187df6d527fce3",
+          "size": 8937
         }
       ]
     }
@@ -347,110 +347,110 @@
     {
       "file": "yundian-growth-acquisition-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-acquisition",
-      "sha256": "071a6e39e022c90eaaffbc4d6de8a12bbaab8f1a100831cd7f364c69fa58ccad",
-      "size": 5801
+      "sha256": "5865fcf4bf66d26e78f3548b798f8a20ff342db80556803f13cb4983d7744760",
+      "size": 5899
     },
     {
       "file": "yundian-growth-buyer-check-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-buyer-check",
-      "sha256": "b3c83d6f508b463a525e5e5dd6fdb99680c21a357003c44421516dab0694a786",
-      "size": 12881
+      "sha256": "1977d653a6e5d9b60b6a8139885b5cfbcd5b79930112e3557d329b80089a69f7",
+      "size": 15403
     },
     {
       "file": "yundian-growth-content-operations-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-content-operations",
-      "sha256": "f02dc1bed37d4cac947b6c74162804d1f685cf351c97793ff0b53a016b18784f",
-      "size": 5485
+      "sha256": "ec249420083a32a923655d1ca610fcab451195fc7b78214b8cd3c57f50cb5587",
+      "size": 5583
     },
     {
       "file": "yundian-growth-email-outreach-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-email-outreach",
-      "sha256": "c1ef339346ad8ef1bf045486e9cfbcecf36ed6e7ba42decc7013402797c8d07d",
-      "size": 4520
+      "sha256": "03604edd2cb8d06364c50624becc6f50279be7925a54e002cd31bf2a5b11d935",
+      "size": 4618
     },
     {
       "file": "yundian-growth-facebook-ads-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-facebook-ads",
-      "sha256": "ed77647f59d2d772f00c9b7c9cb64dc1d56c0548db9a0dc8d4f1c4fd4b35eb23",
-      "size": 3866
+      "sha256": "2b95be6103c37e3265b3a56a60c93ebd081cacd113e9ae5de722a29cc2b61f04",
+      "size": 3964
     },
     {
       "file": "yundian-growth-geo-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-geo",
-      "sha256": "93d7cb3a0f244e9e561be784588fbc34ed2ac71aa8293e63744d4c4dabf8835f",
-      "size": 3516
+      "sha256": "cd623bd11391f005ae18394135aa81924ed63c0aa404a6b39c2e5f7aeab9928b",
+      "size": 3614
     },
     {
       "file": "yundian-growth-google-ads-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-google-ads",
-      "sha256": "2a67cf176e20a51d22c14c556ca71556cebb67a37cdfe6e48fc668338844bfdc",
-      "size": 3674
+      "sha256": "653897c0e33c8e1621e2298bf56d5c0f19184c1513cd60bba79118240562b36c",
+      "size": 3772
     },
     {
       "file": "yundian-growth-knowledge-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-knowledge",
-      "sha256": "be7a44d26cea482cab3527671b1a73f03cc349d4ecb7a06757bd7663577a30d9",
-      "size": 10250
+      "sha256": "c8f2a7a71053b12c1cc6ba9b05d253964356ddf8aea8bad592a279f59d892f02",
+      "size": 10615
     },
     {
       "file": "yundian-growth-market-research-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-market-research",
-      "sha256": "04bf0bf0b0180fd132ebaa5bd41abba999c4dbbb984e43da9212682f56e28dd4",
-      "size": 14053
+      "sha256": "afd6058987469c1ec764eab40566e9a0a7d3d8f076fec3834259695f5c55241f",
+      "size": 14151
     },
     {
       "file": "yundian-growth-next-cycle-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-next-cycle",
-      "sha256": "35612b6a628a8bd03e40c5833108381881928de0a0f54c682014a0f5bc440f16",
-      "size": 4225
+      "sha256": "675e999f383ec9fdfb57d8799adfa6c23605d7a2da54f457f162077bd33801bf",
+      "size": 4323
     },
     {
       "file": "yundian-growth-product-opportunity-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-product-opportunity",
-      "sha256": "c287e58976e48ae44c1526858640f6cb67673a207b0e0fae653c54db3adcb47d",
-      "size": 12496
+      "sha256": "5bd8b35b3f3795bdfd594eeae051965fe06532d40280287201c02281c34024df",
+      "size": 12594
     },
     {
       "file": "yundian-growth-sales-feedback-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-sales-feedback",
-      "sha256": "a19809e912982f3ef9559056a94361fd873491af7f5c8dbfc8461e7a6580eeb1",
-      "size": 4925
+      "sha256": "86bc9e7ecad9ab657a1ce3549a173b0feb42b0023d41018bfe011c4c6373223f",
+      "size": 7447
     },
     {
       "file": "yundian-growth-seo-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-seo",
-      "sha256": "2b20172786cbb7fb2a86c4e16f661a4239a34b8fbd080acc3f9e966604311a38",
-      "size": 3531
+      "sha256": "ce19387c69839afe654f1035b834ba5c50fb537efe2a40e7deffffa898a8c86a",
+      "size": 3629
     },
     {
       "file": "yundian-growth-seo-geo-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-seo-geo",
-      "sha256": "9f6765bc5644a112575906a2f5b99b2a47074abff1cc794d2d11de6bb605af25",
-      "size": 67143
+      "sha256": "45b516e09ddbb1db256368947dc9e63c54654e2ecbf80b6007f68f05294db6b9",
+      "size": 67241
     },
     {
       "file": "yundian-growth-site-and-content-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-site-and-content",
-      "sha256": "06c69aa49b63c8e18a41df33637aaa632b1671cbecebf36006da9e11c0100200",
-      "size": 3970
+      "sha256": "7f81fef36b3253dfbb7ea6ba5ec86e9d2a4f840416e1dd869fc6793fff8432c5",
+      "size": 4068
     },
     {
       "file": "yundian-growth-social-media-v0.16.0-working-tree.zip",
       "skillId": "yundian-growth-social-media",
-      "sha256": "4b6dee06139c5e1a0a92991530ffc74900e1ce0a26485f3770fe3c951c3010fe",
-      "size": 4726
+      "sha256": "0f60f02e494a9c6e458bae705a6cc7fdfef38fb105a23ea2b27df0c0fd40a9c6",
+      "size": 4824
     },
     {
       "file": "yundian-growth-workbench-v0.15.0-working-tree.zip",
       "skillId": "yundian-growth-workbench",
-      "sha256": "5afc24fada9659507d008e5e486e8d1fec0c40fd2cce1ebfc377746ab6d62fcb",
-      "size": 44589
+      "sha256": "d866a86939a3e9b90aecc61a94aa8ac0bd3fe2b3dd13adb08f33788b70bf13d6",
+      "size": 51261
     },
     {
       "file": "yundian-growth-skills-v0.15.0-working-tree.zip",
       "skillId": null,
-      "sha256": "179d7227e2e65f3ab268f12ef9edf1114bc38981ba3a72ba1399b755508729a6",
-      "size": 240726
+      "sha256": "f80037413df20d5912a6fcbfa14ef544447bfdaf7db679e0152c4a4668b66f15",
+      "size": 254081
     }
   ]
 }

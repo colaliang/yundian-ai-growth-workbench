@@ -1,3 +1,4 @@
+import {openFileWorkspace} from '../src/runtime/workspace.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -23,7 +24,7 @@ test('runtime options preserve CLI and documented public environment flag',()=>{
 
 test('state exposes runtime fields and KB baseline while local host protection stays enabled',async()=>{
  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'workbench-runtime-'));
- const server=runtime.createServer(new runtime.FileWorkspace(tmp),0);
+ const server=runtime.createServer(await openFileWorkspace(tmp),0,{privateBase:path.join(tmp,'private-fixture'),legacyPrivateBase:path.join(tmp,'legacy-private-fixture')});
  try {
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   const port=(server.address() as any).port;
@@ -45,9 +46,9 @@ test('compiled JS entry launches locally and retains state and static modules',a
  const port=(reservation.address() as any).port;
  await new Promise<void>(resolve=>reservation.close(()=>resolve()));
  const env={...process.env};delete env.WORKBENCH_PUBLIC;delete env.WORKBUDDY_PUBLIC;
- const child=spawn(process.execPath,['server.js','--root',tmp,'--port',String(port)],{cwd:path.resolve(import.meta.dirname,'..'),env});
+ const child=spawn(process.execPath,['server.js','--root',tmp,'--port',String(port),'--private-base',path.join(tmp,'private-fixture'),'--legacy-private-base',path.join(tmp,'legacy-private-fixture')],{cwd:path.resolve(import.meta.dirname,'..'),env});
  try {
-  await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Launch timeout')),5000);child.once('error',reject);child.once('exit',code=>{clearTimeout(timer);reject(Error('Early exit '+code));});child.stdout.once('data',()=>{clearTimeout(timer);resolve();});});
+  await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Coordinated launch timeout')),30000);child.once('error',reject);child.once('exit',code=>{clearTimeout(timer);reject(Error('Early exit '+code));});child.stdout.once('data',()=>{clearTimeout(timer);resolve();});});
   const state=await (await fetch(`http://127.0.0.1:${port}/api/state`)).json();
   assert.equal(state.projectRoot,tmp);assert.equal(typeof state.token,'string');
   assert.ok(Object.hasOwn(state,'cloud'));assert.ok(Object.hasOwn(state,'kbCheck'));

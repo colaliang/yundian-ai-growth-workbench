@@ -1,3 +1,16 @@
+import {inspectLease} from './src/storage/lease.ts';
+import {planFromWorkspace} from './src/backup/scheduler.ts';
+import {knowledgeFiles,loadKnowledgeMetadata,saveKnowledgeMetadata,knowledgeDetails} from './src/domain/knowledge-metadata.ts';
+import {queryCrmPage,crmScopeId,crmSummary,queryEditorOptions,queryCrmFunnel,pageRows} from './src/crm/page.ts';
+import {readBackupPlan,setBackupPlan,tickBackup} from './src/backup/scheduler.ts';
+import {previewBackupPrune,confirmBackupPrune} from './src/backup/retention.ts';
+import {exportFullBackup,previewFullRestore,confirmFullRestore} from './src/backup/bundle.ts';
+import {LoginLimiter,clientAddress,trustedProxySocket} from './src/auth/rate-limit.ts';
+import {readInstanceConfig,resolveInstance,instanceMetadata,previewLegacyConfigMigration,confirmLegacyConfigMigration} from './src/runtime/instance.ts';
+import {projectCrmRows} from './src/crm/query.ts';
+import {exportCrmCsv,selectExportRows} from './src/crm/export.ts';
+import {LeadRecordService} from './src/crm/lead-record.ts';
+import {MemberService} from './src/crm/members.ts';
 import {CrmService} from './src/crm/service.ts';
 import {crmFamilies} from './src/crm/validation.ts';
 import {PublicationService} from './src/publishing/service.ts';
@@ -15,8 +28,11 @@ import {dailyContext,recommendDaily} from './src/domain/daily-actions.ts';
 import {createTask as newTask,applyReceipt as validateReceipt} from './src/domain/tasks.ts';
 import {safeArtifactUrl,contentHash,inspectArtifact,reviewArtifact as newReview} from './src/domain/artifacts.ts';
 import {knowledgeEntry} from './src/domain/knowledge.ts';
+import {summarizeKnowledgeHealth} from './src/domain/knowledge-health.ts';
 import {loadSkills,buildInvocation} from './src/skills/catalog.ts';
 import { WorkspaceStore } from './src/storage/workspace-store.ts';
+import { computeWorkspaceRevision } from './src/storage/revision.ts';
+import {openFileWorkspace,runWorkspaceMutation,readWorkspaceSnapshot,committedResult} from './src/runtime/workspace.ts';
 import { migrateWorkspace } from './src/storage/migrate.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -39,7 +55,7 @@ const id = () => crypto.randomUUID().replaceAll('-', '');
 const validId = (v: string) => /^[a-f0-9]{32}$/.test(v);
 const sha = (v: Buffer) => crypto.createHash('sha256').update(v).digest('hex');
 
-export interface RuntimeOptions { projectRoot:string; port:number; publicMode:boolean }
+export interface RuntimeOptions { projectRoot:string; port:number; publicMode:boolean; privateBase?:string;legacyPrivateBase?:string }
 const publicMode=(argv:string[],env:Record<string,string|undefined>)=>env.WORKBENCH_PUBLIC==='1'||argv.includes('--public');
 export function parseRuntimeOptions(argv:string[],env:Record<string,string|undefined>):RuntimeOptions {
   const option=(key:string)=>{const at=argv.indexOf(key);return at<0?undefined:argv[at+1];};
@@ -47,15 +63,17 @@ export function parseRuntimeOptions(argv:string[],env:Record<string,string|undef
   if(!projectRoot||projectRoot.startsWith('--')) throw Error('Required --root CUSTOMER_PROJECT');
   const port=Number(argv.includes('--port')?option('--port'):env.PORT??8767);
   if(!Number.isInteger(port)||port<1||port>65535) throw Error('Invalid port');
-  return {projectRoot,port,publicMode:publicMode(argv,env)};
+  const privateBase=argv.includes('--private-base')?option('--private-base'):env.WORKBENCH_PRIVATE_BASE;if(argv.includes('--private-base')&&privateBase===undefined||privateBase!==undefined&&(!privateBase||privateBase.startsWith('--')))throw Error('Invalid private base');
+  const legacyPrivateBase=argv.includes('--legacy-private-base')?option('--legacy-private-base'):env.WORKBENCH_LEGACY_PRIVATE_BASE;if(argv.includes('--legacy-private-base')&&legacyPrivateBase===undefined||legacyPrivateBase!==undefined&&(!legacyPrivateBase||legacyPrivateBase.startsWith('--')))throw Error('Invalid legacy private base');
+  return {projectRoot,port,publicMode:publicMode(argv,env),...(privateBase===undefined?{}:{privateBase}),...(legacyPrivateBase===undefined?{}:{legacyPrivateBase})};
 }
 function knowledgeCheck(store:FileWorkspace) {
   try {
     const manifest=JSON.parse(fs.readFileSync(path.join(APP,'.sync-manifest.json'),'utf8'));
     const names=Object.keys(manifest).filter(file=>file.endsWith('.md'));
     const kbDir=path.join(store.base,'knowledge');
-    const drifted=names.filter(file=>{const target=path.join(kbDir,file);return !fs.existsSync(target)||crypto.createHash('sha1').update(fs.readFileSync(target)).digest('hex')!==manifest[file];});
-    const present=fs.existsSync(kbDir)?fs.readdirSync(kbDir).filter(file=>file.endsWith('.md')).length:0;
+    const drifted=names.filter(file=>{const target=path.join(kbDir,file);return !store.exists(target)||crypto.createHash('sha1').update(store.readBytes(target)).digest('hex')!==manifest[file];});
+    const present=store.exists(kbDir)?store.listDirectory(kbDir).filter(entry=>entry.name.endsWith('.md')).length:0;
     return {status:drifted.length?'drift':'ok',total:names.length,present,drifted,at:manifest.__at||null};
   } catch {return {status:'no-baseline',total:0,present:0,drifted:[],at:null};}
 }
@@ -77,7 +95,7 @@ const loadCloudConfig = (): { endpoint: string; publishableKey: string } | null 
 };
 
 export class FileWorkspace extends WorkspaceStore {
-  constructor(root:string) { super(root); migrateWorkspace(root); this.initialize(); migrateWorkspace(root); }
+  constructor(root:string) { super(root); }
   initialize() {
     const templates=JSON.parse(fs.readFileSync(path.join(APP,'workspace-defaults.json'),'utf8'));
     const workspace=JSON.parse(templates['workspace.json']);
@@ -85,10 +103,9 @@ export class FileWorkspace extends WorkspaceStore {
     templates['workspace.json']=JSON.stringify(workspace,null,2)+'\n';
     const pairs=Object.entries(templates).map(([rel,value])=>[this.checked(path.join(this.base,rel)),value as string]);
     for(const [file,value] of pairs) {
-      fs.mkdirSync(path.dirname(file),{recursive:true});
-      try { fs.writeFileSync(file,value,{flag:'wx'}); } catch(e:any) { if(e.code!=='EEXIST') throw e; }
+      if(!this.exists(file)) this.write(file,value);
     }
-    for(const name of ['tasks','artifacts','workflows','feedback','records','audits',...crmFamilies]) fs.mkdirSync(this.checked(path.join(this.base,name)),{recursive:true});
+
   }
   registry(): Data { return JSON.parse(fs.readFileSync(path.join(APP,'skills/registry.json'),'utf8')); }
   skills(): Data {
@@ -108,44 +125,42 @@ export class FileWorkspace extends WorkspaceStore {
       }
     };
     for(const ent of fs.readdirSync(path.join(APP,'skills'),{withFileTypes:true})) if(ent.isDirectory()&&fs.existsSync(path.join(APP,'skills',ent.name,'SKILL.md'))) walk(path.join(APP,'skills',ent.name),path.join(this.root,'.codebuddy/skills',ent.name));
-    for(const [src,dst] of pairs) if(fs.existsSync(this.checked(dst))&&!fs.readFileSync(src).equals(fs.readFileSync(dst))) throw Error('已有同名技能内容不同，保留客户版本；请按新包 manifest 的版本和 SHA-256 比较，先在独立官方版本目录暂存并审阅差异，再选择版本或合并，不覆盖客户定制');
-    for(const [src,dst] of pairs) if(!fs.existsSync(dst)) this.write(dst,fs.readFileSync(src,'utf8'));
+    for(const [src,dst] of pairs) if(this.exists(this.checked(dst))&&!fs.readFileSync(src).equals(this.readBytes(dst))) throw Error('已有同名技能内容不同，保留客户版本；请按新包 manifest 的版本和 SHA-256 比较，先在独立官方版本目录暂存并审阅差异，再选择版本或合并，不覆盖客户定制');
+    for(const [src,dst] of pairs) if(!this.exists(dst)) this.write(dst,fs.readFileSync(src,'utf8'));
   }
-  digest(): string {
-    const files=[path.join(this.base,'workbench.json'),...this.files('tasks','.json'),...this.files('artifacts','.md'),...this.files('artifacts','.json'),...this.files('reviews','.json'),...this.files('receipts','.json'),...this.files('knowledge-confirmations','.json'),...this.files('knowledge','.md'),...this.files('records','.json'),...this.files('audits','.json'),...this.files('daily-decisions','.json'),...this.files('schedules','.json'),...this.files('schedule-occurrences','.json'),...this.files('delivery-programs','.json'),...this.files('content-items','.json'),...this.files('publish-attempts','.json'),...this.files('publish-confirmations','.json'),...crmFamilies.flatMap(f=>this.files(f,'.json'))].sort();
-    const h=crypto.createHash('sha256');
-    for(const file of files) if(fs.existsSync(this.checked(file))) h.update(path.relative(this.base,file)).update(fs.readFileSync(file));
-    for(const f of this.files('artifacts','.json')){const a=this.json(f);if(a.path){try{h.update(a.path).update(fs.readFileSync(this.checked(path.resolve(this.root,a.path))));}catch{h.update('missing:'+a.path);}}}
-    return h.digest('hex');
-  }
-  load(): Data {
+  digest(): string { return computeWorkspaceRevision(this); }
+  load(crmSnapshot?:CrmService): Data {
+    if(crmSnapshot&&crmSnapshot.store!==this)throw Error('CRM snapshot belongs to another workspace reader');
     const db=path.join(this.base,'workbench.json');
-    const state=fs.existsSync(db)?this.json(db):{profile:{},tasks:[],feedback:[]};
+    const state=this.exists(db)?this.json(db):{profile:{},tasks:[],feedback:[]};
     state.tasks=this.files('tasks','.json').map(f=>this.json(f)).filter(t=>SUPPORTED_STAGES.includes(t.stage)&&validId(t.id)).map(t=>{
       const file=this.checked(path.join(this.base,'artifacts',t.id+'.md'));
-      if(!t.workspaceId&&!t.inputSnapshotRef&&!t.applicationRoot&&!t.scheduleId&&fs.existsSync(file)) {
+      if(!t.workspaceId&&!t.inputSnapshotRef&&!t.applicationRoot&&!t.scheduleId&&this.exists(file)) {
         t.artifact=path.relative(this.base,file);
-        if(!['blocked','needs-input','failed','cancelled'].includes(t.status)&&(t.status!=='completed'||t.reviewedHash!==sha(fs.readFileSync(file)))) t.status='needs-review';
+        if(!['blocked','needs-input','failed','cancelled'].includes(t.status)&&(t.status!=='completed'||t.reviewedHash!==sha(this.readBytes(file)))) t.status='needs-review';
       }
       return t;
     });
     state.workspace=this.json(path.join(this.base,'workspace.json'));
     state.artifacts=this.files('artifacts','.json').map(f=>{const a=this.json(f);try{return inspectArtifact(this,a as any);}catch{return {...a,verification:'unverified',contentHash:null,error:'实际文件丢失或无法读取'};}});
-    for(const t of state.tasks){const file=this.checked(path.join(this.base,'artifacts',t.id+'.md'));if(!t.workspaceId&&!t.inputSnapshotRef&&!t.applicationRoot&&!t.scheduleId&&fs.existsSync(file)&&!state.artifacts.some((a:Data)=>a.taskId===t.id&&a.path===path.relative(this.root,file))){state.artifacts.push({id:t.id,workspaceId:state.workspace.workspaceId,taskId:t.id,module:t.stage,skillVersion:t.skillVersion||'legacy',inputSnapshotRef:t.inputSnapshotRef||'',path:path.relative(this.root,file),summary:t.name,sources:[],gaps:['历史文件，执行来源未核验'],nextSteps:[],executedAt:null,verification:'unverified',contentHash:contentHash(fs.readFileSync(file)),executor:'legacy'});}}
+    for(const t of state.tasks){const file=this.checked(path.join(this.base,'artifacts',t.id+'.md'));if(!t.workspaceId&&!t.inputSnapshotRef&&!t.applicationRoot&&!t.scheduleId&&this.exists(file)&&!state.artifacts.some((a:Data)=>a.taskId===t.id&&a.path===path.relative(this.root,file))){state.artifacts.push({id:t.id,workspaceId:state.workspace.workspaceId,taskId:t.id,module:t.stage,skillVersion:t.skillVersion||'legacy',inputSnapshotRef:t.inputSnapshotRef||'',path:path.relative(this.root,file),summary:t.name,sources:[],gaps:['历史文件，执行来源未核验'],nextSteps:[],executedAt:null,verification:'unverified',contentHash:contentHash(this.readBytes(file)),executor:'legacy'});}}
     state.reviews=this.files('reviews','.json').map(f=>this.json(f)).map(r=>({...r,valid:state.artifacts.some((a:Data)=>a.id===r.artifactId&&a.contentHash===r.contentHash&&a.contentHash!==null)}));
     for(const t of state.tasks){if(t.reviewedHash&&!state.reviews.some((r:Data)=>r.taskId===t.id)){const a=state.artifacts.find((a:Data)=>a.taskId===t.id&&a.id===t.id);if(a)state.reviews.push({id:'legacy-'+t.id,workspaceId:state.workspace.workspaceId,taskId:t.id,artifactId:a.id,contentHash:t.reviewedHash,reviewedAt:t.finishedAt||'',evidence:t.review||'历史验收',decision:'accepted',valid:a.contentHash===t.reviewedHash});}}
     for(const t of state.tasks){const artifacts=state.artifacts.filter((a:Data)=>a.taskId===t.id);if(artifacts.length){t.artifactIds=artifacts.map((a:Data)=>a.id);const all=artifacts.every((a:Data)=>a.contentHash&&(()=>{const latest=state.reviews.filter((r:Data)=>r.artifactId===a.id).sort((x:Data,y:Data)=>(x.sequence||0)-(y.sequence||0)||String(x.reviewedAt).localeCompare(String(y.reviewedAt))).at(-1);return latest?.valid&&latest.decision==='accepted';})());t.status=all&&['completed','needs-review'].includes(t.status)?'completed':(t.status==='completed'||t.status==='needs-review')?'needs-review':t.status;}}
-    const crm=new CrmService(this);state.crm={companies:crm.listCompanies({includeArchived:true}),contacts:crm.listContacts({includeArchived:true}),leads:crm.listLeads({includeArchived:true}),followups:crm.listFollowUps({includeArchived:true}),feedbackLinks:crm.list('crm-feedback-links',{})};
+    const crm=crmSnapshot??CrmService.readSnapshot(this);state.crm={members:crm.list('crm-members',{includeArchived:true}),companies:crm.listCompanies({includeArchived:true}),contacts:crm.listContacts({includeArchived:true}),leads:crm.listLeads({includeArchived:true}),followups:crm.listFollowUps({includeArchived:true}),feedbackLinks:crm.list('crm-feedback-links',{})};
     state.serviceCatalog=deliveryCatalog();
     state.deliveryPrograms=this.files('delivery-programs','.json').map(f=>this.json(f)).filter(p=>p.workspaceId===state.workspace.workspaceId).map(p=>{const progress=deliveryProgress(p as any,state.tasks,state.artifacts,state.reviews);return {...p,artifactIds:progress.artifactIds,progress};});
     const confirmations=this.files('knowledge-confirmations','.json').map(f=>this.json(f));
-    state.knowledge=this.files('knowledge','.md').map(f=>knowledgeEntry(path.relative(this.base,f),this.read(f),state.workspace.workspaceId,confirmations.find(c=>c.path===path.relative(this.base,f))));
+    const knowledgeMetadata=loadKnowledgeMetadata(this);
+    state.knowledge=knowledgeFiles(this).map(f=>({...knowledgeEntry(path.relative(this.base,f),this.read(f),state.workspace.workspaceId,confirmations.find(c=>c.path===path.relative(this.base,f))),...knowledgeDetails(this,path.relative(this.base,f),knowledgeMetadata)}));
+    state.knowledgeHealth=summarizeKnowledgeHealth(state.knowledge,this.root,new Date().toISOString());
     state.records=this.files('records','.json').map(f=>this.json(f));
     state.audits=this.files('audits','.json').map(f=>({id:path.basename(f,'.json'),...this.json(f)}));
     state.dailyDecisions=this.files('daily-decisions','.json').reduce((all:Data,f)=>{const row=this.json(f);if(row.workspaceId===state.workspace.workspaceId)all[row.id]=row;return all;},{});
     state.schedules=this.files('schedules','.json').map(f=>this.json(f)).filter(s=>s.workspaceId===state.workspace.workspaceId);
     state.scheduleOccurrences=this.files('schedule-occurrences','.json').map(f=>this.json(f)).filter(s=>s.workspaceId===state.workspace.workspaceId);
     const taskReceipts=this.files('receipts','.json').map(f=>this.json(f));
+    for(const task of state.tasks){const r=task.latestReceiptKey&&taskReceipts.find((r:Data)=>r.workspaceId===state.workspace.workspaceId&&r.taskId===task.id&&r.receiptKey===task.latestReceiptKey);delete task.executionReceipt;if(r?.receipt)task.executionReceipt={receiptId:r.receipt.receiptId,executor:r.receipt.executor,status:r.receipt.status,registeredAt:r.registeredAt};}
     state.scheduleOccurrences=state.scheduleOccurrences.map((o:Data)=>{
       if(!o.taskId||o.status==='pending-confirmation')return o;
       const task=state.tasks.find((t:Data)=>t.id===o.taskId);
@@ -159,19 +174,20 @@ export class FileWorkspace extends WorkspaceStore {
     state.settings=state.settings??{}; state.version=VERSION; state.skills=this.skills(); state.dailyActions=recommendDaily(dailyContext(state),new Date().toISOString()); state.revision=this.digest(); return state;
   }
   checkRevision(revision:string){if(revision!==this.digest())throw Error('资料已被其他操作更新，请刷新后重试');}
-  createTask(input:Data,revision:string):Data{if(input.sourceLeadId!==undefined){const context=new CrmService(this).crmLeadContext(input.sourceLeadId);if(context.lead.archivedAt)throw Error('CRM lead archived');if(!['buyer-check','acquisition','email-outreach','sales-feedback'].includes(input.stage))throw Error('CRM context is private to customer acquisition tasks');input={...input,inputs:JSON.stringify({crmLeadId:context.lead.id,sourceLeadId:context.lead.sourceLeadId,source:context.lead.source,currentLead:context.lead,company:context.company,contacts:context.contacts,followups:context.followups,artifactIds:context.artifactIds}),instructions:(input.instructions||'')+'\n仅当前客户私有任务取用 CRM 实际记录；不得自动发送、提取虚构联系人、标记成交或共享至咨询/发布/知识库。'};}const before=this.load().tasks.map((t:Data)=>t.id);const state=this.save({action:'task',payload:input,revision});return state.tasks.find((t:Data)=>!before.includes(t.id));}
-  task(taskId:string):Data{if(!validId(taskId))throw Error('Invalid task');const file=path.join(this.base,'tasks',taskId+'.json');if(!fs.existsSync(file))throw Error('任务不存在');const task=this.json(file);if(task.id!==taskId)throw Error('任务文件编号不匹配');if(task.workspaceId&&task.workspaceId!==this.json(path.join(this.base,'workspace.json')).workspaceId)throw Error('任务客户不匹配');return task;}
+  createTask(input:Data,revision:string):Data{if(Object.hasOwn(input,'entityVersion'))throw Error('Server-owned entityVersion');if(input.sourceLeadId!==undefined){const context=new CrmService(this).crmLeadContext(input.sourceLeadId);if(context.lead.archivedAt)throw Error('CRM lead archived');if(!['buyer-check','acquisition','email-outreach','sales-feedback'].includes(input.stage))throw Error('CRM context is private to customer acquisition tasks');input={...input,inputs:JSON.stringify({crmLeadId:context.lead.id,sourceLeadId:context.lead.sourceLeadId,source:context.lead.source,currentLead:context.lead,company:context.company,contacts:context.contacts,followups:context.followups,artifactIds:context.artifactIds}),instructions:(input.instructions||'')+'\n仅当前客户私有任务取用 CRM 实际记录；不得自动发送、提取虚构联系人、标记成交或共享至咨询/发布/知识库。'};}const before=this.load().tasks.map((t:Data)=>t.id);const state=this.save({action:'task',payload:input,revision});return state.tasks.find((t:Data)=>!before.includes(t.id));}
+  task(taskId:string):Data{if(!validId(taskId))throw Error('Invalid task');const file=path.join(this.base,'tasks',taskId+'.json');if(!this.exists(file))throw Error('任务不存在');const task=this.json(file);if(task.id!==taskId)throw Error('任务文件编号不匹配');if(task.workspaceId&&task.workspaceId!==this.json(path.join(this.base,'workspace.json')).workspaceId)throw Error('任务客户不匹配');return task;}
   registerManual(task:Data,file:string):Data{
-    const artifactId=task.id;const artifact={id:artifactId,workspaceId:this.load().workspace.workspaceId,taskId:task.id,module:task.stage,skillVersion:task.skillVersion||'legacy',inputSnapshotRef:task.inputSnapshotRef||'',executedAt:null,path:path.relative(this.root,file),summary:task.name,sources:[],gaps:['手动保存，执行来源未核验'],nextSteps:[],verification:'unverified',contentHash:contentHash(fs.readFileSync(file)),executor:'manual'};
+    const artifactId=task.id;const artifact={id:artifactId,workspaceId:this.load().workspace.workspaceId,taskId:task.id,module:task.stage,skillVersion:task.skillVersion||'legacy',inputSnapshotRef:task.inputSnapshotRef||'',executedAt:null,path:path.relative(this.root,file),summary:task.name,sources:[],gaps:['手动保存，执行来源未核验'],nextSteps:[],verification:'unverified',contentHash:contentHash(this.readBytes(file)),executor:'manual'};
     this.put(path.join(this.base,'artifacts',artifactId+'.json'),artifact);Object.assign(task,{artifact:path.relative(this.base,file),artifactIds:[...new Set([...(task.artifactIds||[]),artifactId])],status:'needs-review'});this.put(path.join(this.base,'tasks',task.id+'.json'),task);return artifact;
   }
   applyReceipt(taskId:string,receipt:Data,revision:string):Data{
+    if(Object.hasOwn(receipt,'entityVersion')||(receipt.artifacts??[]).some((a:Data)=>Object.hasOwn(a,'entityVersion')))throw Error('Server-owned entityVersion');
     this.checkRevision(revision);const task=this.task(taskId),workspaceId=this.load().workspace.workspaceId;
     const normalized={...task,workspaceId:task.workspaceId||workspaceId,skillVersion:task.skillVersion||'legacy'};
     if(receipt.taskId!==taskId)throw Error('回执任务不匹配');
     const updated:any=validateReceipt(normalized as any,receipt as any);
     const receiptKey=contentHash(taskId+'\n'+receipt.receiptId),receiptFile=path.join(this.base,'receipts',receiptKey+'.json'),fingerprint=contentHash(JSON.stringify(receipt));
-    if(fs.existsSync(receiptFile)){if(this.json(receiptFile).fingerprint!==fingerprint)throw Error('receiptId 已存在且内容不同');return this.load().tasks.find((t:Data)=>t.id===taskId);}
+    if(this.exists(receiptFile)){if(this.json(receiptFile).fingerprint!==fingerprint)throw Error('receiptId 已存在且内容不同');return this.load().tasks.find((t:Data)=>t.id===taskId);}
     if(task.scheduleId){
       const state=this.load(),schedule=state.schedules.find((s:Data)=>s.id===task.scheduleId);
       const occurrence=state.scheduleOccurrences.find((o:Data)=>o.scheduleId===task.scheduleId&&o.taskId===taskId&&o.scheduledAt===task.scheduledAt);
@@ -228,7 +244,7 @@ export class FileWorkspace extends WorkspaceStore {
       if(action==='schedule-pause'){this.put(scheduleFile,requestPause(schedule as any));return this.load();}
       if(action==='schedule-occurrence'){
         const scheduledAt=validateOccurrence(schedule as any,p.scheduledAt),key=occurrenceKey(schedule.id,scheduledAt),file=path.join(this.base,'schedule-occurrences',key+'.json');
-        if(fs.existsSync(file))return this.load();
+        if(this.exists(file))return this.load();
         const allowed=authorizationAllowed(schedule as any),row:Data={id:key,workspaceId:current.workspace.workspaceId,scheduleId:schedule.id,scheduledAt,actualAt:null,createdAt:new Date().toISOString(),hostTaskId:schedule.hostTaskId,status:'preparing',taskId:null,result:null,error:null,retryAllowed:false};
         // Reserve before task creation: a failed attempt is retained and never automatically retried.
         this.put(file,row);
@@ -240,10 +256,10 @@ export class FileWorkspace extends WorkspaceStore {
         this.put(file,row);return this.load();
       }
       const key=occurrenceKey(schedule.id,p.scheduledAt),file=path.join(this.base,'schedule-occurrences',key+'.json');
-      if(!fs.existsSync(file))throw Error('执行批次不存在');const row=this.json(file);
+      if(!this.exists(file))throw Error('执行批次不存在');const row=this.json(file);
       if(!row.taskId||p.receipt?.taskId!==row.taskId)throw Error('执行回执批次不匹配');
       const existingReceiptFile=path.join(this.base,'receipts',contentHash(row.taskId+'\n'+p.receipt.receiptId)+'.json');
-      if(fs.existsSync(existingReceiptFile)){
+      if(this.exists(existingReceiptFile)){
         if(this.json(existingReceiptFile).fingerprint!==contentHash(JSON.stringify(p.receipt)))throw Error('receiptId 已存在且内容不同');
         return this.load(); // Exact replay is read-only, including terminal outcomes.
       }
@@ -273,8 +289,9 @@ export class FileWorkspace extends WorkspaceStore {
       this.put(path.join(this.base,'delivery-programs',program.id+'.json'),program);return this.load();
     }
     if(action==='receipt'){this.applyReceipt(p.taskId,p,current.revision);return this.load();}
+    if(action==='knowledge-metadata'){saveKnowledgeMetadata(this,p,{revision:current.revision});return this.load();}
     if(action==='knowledge-confirm'){this.confirmKnowledge(p.path,p.contentHash,current.revision);return this.load();}
-    if(action==='review'){const t=current.tasks.find((t:Data)=>t.id===p.id);if(!t)throw Error('任务不存在');let a=current.artifacts.find((a:Data)=>a.taskId===t.id);if(!a){const file=this.checked(path.join(this.base,'artifacts',t.id+'.md'));if(!fs.existsSync(file))throw Error('需要先保存实际产物');a=this.registerManual(t,file);}this.reviewArtifact(t.id,p.contentHash||a.contentHash,p.decision||'accepted',String(p.review??''),this.load().revision,p.artifactId);return this.load();}
+    if(action==='review'){const t=current.tasks.find((t:Data)=>t.id===p.id);if(!t)throw Error('任务不存在');let a=current.artifacts.find((a:Data)=>a.taskId===t.id);if(!a){const file=this.checked(path.join(this.base,'artifacts',t.id+'.md'));if(!this.exists(file))throw Error('需要先保存实际产物');a=this.registerManual(t,file);}this.reviewArtifact(t.id,p.contentHash||a.contentHash,p.decision||'accepted',String(p.review??''),this.load().revision,p.artifactId);return this.load();}
     if(action==='artifact'){const t=current.tasks.find((t:Data)=>t.id===p.id);if(!t)throw Error('任务不存在');const content=String(p.content??'').trim();if(!content||content.length>900000)throw Error('请输入实际产物内容');const file=this.checked(path.join(this.base,'artifacts',t.id+'.md'));this.write(file,content+'\n');this.registerManual(t,file);return this.load();}
 
     const state={profile:current.profile,tasks:current.tasks,feedback:current.feedback,settings:current.settings};
@@ -321,6 +338,7 @@ export class FileWorkspace extends WorkspaceStore {
       if(!text('title').trim()||!text('content').trim()||!text('source').trim()) throw Error('请填写资料标题、实际内容和来源');
       this.write(path.join(this.base,'knowledge',id()+'.md'),'# '+text('title').trim()+'\n\n'+text('content',900000).trim()+'\n\n来源：'+text('source').trim()+'\n日期：'+now+'\n审核状态：待确认\n');
     } else if(action==='task') {
+      if(Object.hasOwn(p,'entityVersion'))throw Error('Server-owned entityVersion');
       if(p.sourceLeadId!==undefined){const context=new CrmService(this).crmLeadContext(p.sourceLeadId);if(context.lead.archivedAt||context.company.archivedAt)throw Error('CRM source is archived');if(!['buyer-check','acquisition','email-outreach','sales-feedback'].includes(p.stage))throw Error('CRM context must remain in private acquisition tasks');p.inputs=JSON.stringify({crmLeadId:context.lead.id,sourceLeadId:context.lead.sourceLeadId,source:context.lead.source,currentLead:context.lead,company:context.company,contacts:context.contacts,followups:context.followups,artifactIds:context.artifactIds});}
 
       if(!state.profile.company) throw Error('请先创建企业知识库');
@@ -346,19 +364,23 @@ export class FileWorkspace extends WorkspaceStore {
   }
 }
 
-export interface ServerOptions {publicMode?:boolean;ownerConfig?:OwnerConfig;appRoot?:string;trustProxy?:boolean;publisherFetch?:typeof fetch;publisherPort?:PublisherPort}
+export interface ServerOptions {publicMode?:boolean;ownerConfig?:OwnerConfig;appRoot?:string;privateBase?:string;legacyAppRoot?:string;legacyPrivateBase?:string;trustProxy?:boolean;trustedProxyAddresses?:readonly string[];authClock?:()=>number;publisherFetch?:typeof fetch;publisherPort?:PublisherPort}
 export function createServer(store: FileWorkspace,port: number,options:ServerOptions={}) {
+  const loginLimiter=new LoginLimiter(),authClock=options.authClock??Date.now;
   const token=crypto.randomBytes(32).toString('base64url');
   const isPublic=options.publicMode??publicMode(process.argv.slice(2),process.env);
-  const secretRoot=options.appRoot??APP;
+  const secretRoot=resolveInstance(store.root,{privateBase:options.privateBase});
   const owner=options.ownerConfig??loadOwnerConfig(secretRoot,isPublic);
   if(owner.publicMode!==isPublic)throw Error('Owner configuration mode mismatch');
   const cloudConfig=loadCloudConfig();
   const content=new ContentService(store);
-  const crm=new CrmService(store);
+  const crm=new CrmService(store);const members=new MemberService(store);
   const publication=new PublicationService(store,()=>{const secrets=loadPublisherSecrets(secretRoot);if(!secrets.apiKey)throw Error('Publisher unavailable');return {secrets,publisher:options.publisherPort??new McpPublisher(secrets.apiKey,options.publisherFetch)};});
-  return http.createServer(async(req,res)=>{
+  const server=http.createServer(async(req,res)=>{
+    let buffered:{value:any;status:number;mime:string}|undefined,buffering=false;
     const respond=(value:any,status=200,mime='application/json; charset=utf-8')=>{
+      if(buffering){buffered={value,status,mime};return;}
+      if(req.headers['x-crm-mode']==='summary'&&value?.crm&&value.crm.mode!=='summary'){const snapshot={workspace:value.workspace??{workspaceId:crm.workspaceId},revision:value.revision,crm:value.crm};value={...value,crm:crmSummary(snapshot),...(Array.isArray(value.feedback)?{feedback:value.feedback.map((f:Data)=>({...f,crmLeadId:value.crm.feedbackLinks?.find((l:Data)=>l.feedbackId===f.id)?.crmLeadId??null}))}:{}),...(Array.isArray(value.dailyActions)?{dailyActions:value.dailyActions.map((a:Data)=>String(a.id).startsWith('crm-followup:')?{...a,inputs:''}:a)}:{})};}
       const data=Buffer.isBuffer(value)?value:Buffer.from(JSON.stringify(value));
       res.writeHead(status,{'Content-Type':mime,'Content-Length':data.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}); res.end(data);
     };
@@ -366,28 +388,36 @@ export function createServer(store: FileWorkspace,port: number,options:ServerOpt
     const pathname=(req.url??'/').split('?')[0];
     try {
       const origin=req.headers.origin;
-      const protocol=(req.socket as any).encrypted||(options.trustProxy&&req.headers['x-forwarded-proto']==='https')?'https':'http';
+      const protocol=(req.socket as any).encrypted||(trustedProxySocket(req,options.trustProxy,options.trustedProxyAddresses)&&req.headers['x-forwarded-proto']==='https')?'https':'http';
       if(origin&&origin!==protocol+'://'+req.headers.host) return respond({error:'Invalid origin'},403);
       if(pathname==='/healthz'&&req.method==='GET')return respond({ok:true});
-      if(pathname==='/api/auth/status'&&req.method==='GET')return respond({...authorizeOwner(req,owner),publicMode:isPublic});
+      if(pathname==='/api/auth/status'&&req.method==='GET')return respond({...authorizeOwner(req,owner,authClock()),publicMode:isPublic});
       if(pathname==='/api/auth/login'&&req.method==='POST'){
         if(!owner.passwordHash)return respond({error:'Configure owner with local CLI',setupRequired:true},401);
+        const nowMs=authClock(),clientKey=clientAddress(req,options.trustProxy,options.trustedProxyAddresses);const limit=loginLimiter.check(secretRoot.instanceId,clientKey,nowMs);if(!limit.allowed){res.setHeader('Retry-After',String(limit.retryAfterSeconds));return respond({error:'登录尝试过于频繁',loginRequired:true,retryAfterSeconds:limit.retryAfterSeconds},429);}
         const chunks:Buffer[]=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>4096)return respond({error:'Request too large'},413);chunks.push(chunk);}
         const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        if(!verifyPassword(body.password,owner.passwordHash))return respond({error:'Invalid owner password',loginRequired:true},401);
-        const session=issueOwnerSession(owner);res.setHeader('Set-Cookie','wb_owner='+session+'; HttpOnly; SameSite=Strict; Path=/; Max-Age='+owner.sessionTtlSeconds+(protocol==='https'?'; Secure':''));
+        if(!verifyPassword(body.password,owner.passwordHash)){loginLimiter.failure(secretRoot.instanceId,clientKey,nowMs);return respond({error:'Invalid owner password',loginRequired:true},401);}
+        loginLimiter.success(secretRoot.instanceId,clientKey,nowMs);
+        const session=issueOwnerSession(owner,nowMs);res.setHeader('Set-Cookie','wb_owner='+session+'; HttpOnly; SameSite=Strict; Path=/; Max-Age='+owner.sessionTtlSeconds+(protocol==='https'?'; Secure':''));
         return respond({allowed:true});
       }
-      const auth=authorizeOwner(req,owner);
-      const shell=['/','/index.html','/styles-v03.css','/web/main.js','/web/auth-bootstrap.js','/web/modules.js','/web/views/login.js'];
+      const auth=authorizeOwner(req,owner,authClock());
+      const shell=['/','/index.html','/styles-v03.css','/web/main.js','/web/workbench-ui.js','/web/auth-bootstrap.js','/web/modules.js','/web/views/login.js'];
       if(!auth.allowed&&!shell.includes(pathname))return respond({...auth,error:auth.setupRequired?'Owner setup required':'Owner login required'},401);
       if(pathname==='/api/auth/logout'&&req.method==='POST'){
         if(req.headers['x-workspace-token']!==token)return respond({error:'Invalid workspace token'},403);
         revokeOwnerSession(req,owner);res.setHeader('Set-Cookie','wb_owner=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+(protocol==='https'?'; Secure':''));return respond({ok:true});
       }
       if(req.method==='GET') {
+        let snapshot:Data|undefined,crmSnapshot:CrmService|undefined;
+        const readCrm=()=>crmSnapshot??=CrmService.readSnapshot(store);
+        const readSnapshot=()=>snapshot??=store.load(readCrm());
+        const getRoute=async()=>{
         if(pathname==='/healthz') return respond({ok:true});
+        if(pathname==='/api/runtime/status')return respond({...instanceMetadata(secretRoot),lock:inspectLease(store.root),checkedAt:new Date().toISOString()});
         if(pathname==='/api/update/inspect') return respond(inspectUpdate(store.root));
+        if(pathname==='/api/backup/plan'){if(req.headers['x-workspace-token']!==token)return respond({error:'Invalid workspace token'},403);return respond(await readBackupPlan(store.root));}
         if(pathname==='/api/backup/snapshot'){if(req.headers['x-workspace-token']!==token)return respond({error:'授权校验失败，请刷新工作台'},403);return respond(createSnapshot(store.root));}
         if(pathname==='/api/update') {
           try {
@@ -396,46 +426,84 @@ export function createServer(store: FileWorkspace,port: number,options:ServerOpt
             return respond(releaseInfo(await response.json()));
           } catch { return respond({error:'版本检查失败，请稍后重试或在WorkBuddy检查仓库版本'},502); }
         }
-        if(/^\/api\/crm\/leads\/[a-f0-9]{32}\/context$/.test(pathname))return respond({context:crm.crmLeadContext(pathname.split('/')[4]),revision:store.load().revision});
-        if(pathname.startsWith('/api/crm/')){const match=/^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32}))?$/.exec(pathname);if(!match)return respond({error:'Not found'},404);const family='crm-'+match[1],filters=Object.fromEntries(new URL(req.url!,'http://localhost').searchParams);return respond({items:match[2]?[crm.get(family,match[2])]:crm.list(family,filters),revision:store.load().revision});}
+        if(pathname==='/api/crm/editor-options'){const params=new URL(req.url!,'http://localhost').searchParams,snapshot=readSnapshot();if(params.has('workspaceId')&&params.get('workspaceId')!==snapshot.workspace.workspaceId)throw Error('CRM workspace mismatch');if(params.has('revision')&&params.get('revision')!==snapshot.revision)return respond({error:'revision conflict: 请刷新并重新确认'},409);const kind=params.get('kind')||'',page=Number(params.get('page')||1),query=params.get('query')||'';if(kind==='opportunity'){const rows=snapshot.records.filter((r:Data)=>r.stage==='product-opportunity'&&r.opportunityId&&String(r.name||'').toLowerCase().includes(query.toLowerCase()));if(params.getAll('selected').length>100)throw Error('Invalid selected options');const label=(r:Data)=>({opportunityId:r.opportunityId,name:r.name});return respond({...pageRows(rows.map(label),page,20),selected:snapshot.records.filter((r:Data)=>params.getAll('selected').includes(r.opportunityId)).map(label).slice(0,100),revision:snapshot.revision});}return respond(queryEditorOptions(snapshot as any,{kind,query,page,selected:params.getAll('selected'),companyId:params.get('companyId')||undefined,includeInactive:params.get('includeInactive')==='true',includeArchived:params.get('includeArchived')==='true'}));}
+        if(/^\/api\/crm\/leads\/[a-f0-9]{32}\/context$/.test(pathname)){const params=new URL(req.url!,'http://localhost').searchParams,snapshot=readSnapshot();if(params.has('workspaceId')&&params.get('workspaceId')!==snapshot.workspace.workspaceId)throw Error('CRM workspace mismatch');if(params.has('revision')&&params.get('revision')!==snapshot.revision)return respond({error:'revision conflict: 请刷新并重新确认'},409);return respond({context:readCrm().crmLeadContext(pathname.split('/')[4]),revision:snapshot.revision});}
+        if(pathname.startsWith('/api/crm/')){const match=/^\/api\/crm\/(members|companies|contacts|leads|followups)(?:\/([a-f0-9]{32}))?$/.exec(pathname);if(!match)return respond({error:'Not found'},404);const family='crm-'+match[1],filters=Object.fromEntries(new URL(req.url!,'http://localhost').searchParams);return respond({items:match[2]?[readCrm().get(family,match[2])]:readCrm().list(family,filters),revision:readSnapshot().revision});}
         if(pathname==='/api/content/items'){const params=new URL(req.url!,'http://localhost').searchParams;return respond({items:content.list(Object.fromEntries(params)),revision:store.load().revision});}
         if(pathname==='/api/publisher/attempts')return respond({attempts:publication.listAttempts(),revision:store.load().revision});
         if(pathname==='/api/content/export')return respond(content.exportPlan());
         if(['/api/publisher/connect','/api/publisher/channels','/api/publisher/media','/api/publisher/balance'].includes(pathname)){const key=loadPublisherSecrets(secretRoot).apiKey;if(!key)return respond({connected:false,checkedAt:new Date().toISOString(),capabilities:[],error:'发布服务未配置'},409);const publisher=new McpPublisher(key,options.publisherFetch);if(pathname.endsWith('/connect'))return respond(await publisher.connect());if(pathname.endsWith('/channels'))return respond({channels:await publisher.listChannels()});if(pathname.endsWith('/media'))return respond({media:await publisher.listMedia()});return respond(await publisher.getBalance());}
         if(pathname==='/api/publisher/config')return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));
-        if(pathname==='/api/state') return respond({...store.load(),token,projectRoot:store.root,cloud:isPublic?null:cloudConfig,publisher:publisherMetadata(loadPublisherSecrets(secretRoot)),kbCheck:knowledgeCheck(store)});
-        if(pathname.startsWith('/api/artifacts/')){const parts=pathname.split('/'),a=store.artifact(parts[3]);if(parts[4]==='file'){if(!a.path||!a.contentHash)return respond({error:'实际文件无法读取'},404);const file=store.checked(path.resolve(store.root,a.path));return respond(fs.readFileSync(file),200,'application/octet-stream');}return respond(a);}
+        if(pathname==='/api/state') {const full=readSnapshot(),summary=new URL(req.url!,'http://localhost').searchParams.get('crm')==='summary',view=summary?{...full,crm:crmSummary(full as any),feedback:full.feedback.map((f:Data)=>({...f,crmLeadId:full.crm.feedbackLinks.find((l:Data)=>l.feedbackId===f.id)?.crmLeadId??null})),dailyActions:full.dailyActions.map((a:Data)=>String(a.id).startsWith('crm-followup:')?{...a,inputs:''}:a)}:full;return respond({...view,token,projectRoot:store.root,runtime:{...instanceMetadata(secretRoot),lock:inspectLease(store.root),checkedAt:new Date().toISOString()},backupPlan:planFromWorkspace(full.workspace),cloud:isPublic?null:cloudConfig,publisher:publisherMetadata(loadPublisherSecrets(secretRoot)),kbCheck:knowledgeCheck(store)});}
+        if(pathname.startsWith('/api/artifacts/')){const parts=pathname.split('/'),a=store.artifact(parts[3]);if(parts[4]==='file'){if(!a.path||!a.contentHash)return respond({error:'实际文件无法读取'},404);const file=store.checked(path.resolve(store.root,a.path));return respond(store.readBytes(file),200,'application/octet-stream');}return respond(a);}
         if(pathname.startsWith('/api/artifact/')) {
           const name=pathname.split('/').pop()!; if(!/^[a-f0-9]{32}\.md$/.test(name)) return respond({error:'Invalid artifact'},400);
           const file=store.checked(path.join(store.base,'artifacts',name));
-          return fs.existsSync(file)?respond(fs.readFileSync(file),200,'text/plain; charset=utf-8'):respond({error:'Not found'},404);
+          return store.exists(file)?respond(store.readBytes(file),200,'text/plain; charset=utf-8'):respond({error:'Not found'},404);
         }
-        const files:Data={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app-v03.js':['app-v03.js','text/javascript'],'/styles-v03.css':['styles-v03.css','text/css'],'/brand.jpg':['brand.jpg','image/jpeg'], ...Object.fromEntries(['auth-bootstrap.js','views/login.js','views/content-plan.js','views/crm.js','modules.js','main.js','api.js','safe-url.js','views/workbench.js','views/settings.js','views/skills.js','views/knowledge.js','views/results.js','views/daily-actions.js','views/schedules.js','views/services.js','views/backup.js'].map(file=>['/web/'+file,['web/'+file,'text/javascript']]))};
+        const files:Data={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app-v03.js':['app-v03.js','text/javascript'],'/styles-v03.css':['styles-v03.css','text/css'],'/brand.jpg':['brand.jpg','image/jpeg'], ...Object.fromEntries(['ui/feedback.js','ui/dialog.js','views/onboarding.js','crm-query.js','read-context.js','views/crm-editor.js','views/crm-members.js','workbench-ui.js','auth-bootstrap.js','views/login.js','views/content-plan.js','views/crm.js','views/crm-funnel.js','modules.js','main.js','api.js','safe-url.js','views/workbench.js','views/settings.js','views/skills.js','views/knowledge.js','views/results.js','views/daily-actions.js','views/schedules.js','views/services.js','views/backup.js'].map(file=>['/web/'+file,['web/'+file,'text/javascript']]))};
         if(!files[pathname]) return respond({error:'Not found'},404);
         return respond(fs.readFileSync(path.join(APP,files[pathname][0])),200,files[pathname][1]);
+        };
+        const remote=['/api/update','/api/publisher/connect','/api/publisher/channels','/api/publisher/media','/api/publisher/balance'];
+        return await (pathname.startsWith('/api/')&&!remote.includes(pathname)?readWorkspaceSnapshot(store.root,()=>getRoute()):getRoute());
       }
-      if(!(req.method==='POST'||req.method==='PATCH'&&pathname.startsWith('/api/crm/'))||!(pathname.startsWith('/api/crm/')||pathname.startsWith('/api/content/')||pathname==='/api/publisher/config'||/^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname)||pathname==='/api/backup/restore'||pathname==='/api/backup/online'||pathname==='/api/save'||pathname==='/api/tasks'||/^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname)||pathname==='/api/knowledge/confirm')) return respond({error:'Not found'},404);
+      if(!(req.method==='POST'||req.method==='PATCH'&&pathname.startsWith('/api/crm/'))||!(pathname.startsWith('/api/crm/')||pathname.startsWith('/api/content/')||pathname==='/api/publisher/config'||pathname==='/api/runtime/config-migration/preview'||pathname==='/api/runtime/config-migration/confirm'||/^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname)||['/api/backup/restore','/api/backup/online','/api/backup/full/export','/api/backup/full/preview','/api/backup/full/confirm','/api/backup/plan','/api/backup/prune/preview','/api/backup/prune/confirm'].includes(pathname)||pathname==='/api/save'||pathname==='/api/tasks'||/^\/api\/tasks\/[a-f0-9]{32}\/(receipts|reviews)$/.test(pathname)||pathname==='/api/knowledge/confirm')) return respond({error:'Not found'},404);
       if(req.headers['x-workspace-token']!==token) return respond({error:'授权校验失败，请刷新工作台'},403);
       if(!isPublic&&req.headers.origin&&!['http://127.0.0.1:'+port,'http://localhost:'+port].includes(req.headers.origin)) return respond({error:'Invalid origin'},403);
       const chunks:Buffer[]=[]; let size=0;
       for await(const chunk of req) { size+=chunk.length; if(size>(pathname==='/api/backup/restore'?64000000:1000000)) return respond({error:'请求过大'},413); chunks.push(chunk); }
       // Synchronous mutations serialize revision checks and writes within this process.
       const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      if(pathname.startsWith('/api/crm/')){store.checkRevision(body.revision);if(body.workspaceId!==crm.workspaceId)throw Error('CRM workspace mismatch');let result;const match=/^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32})(?:\/(archive))?)?$/.exec(pathname);if(req.method==='POST'&&pathname==='/api/crm/feedback-links'){if(body.confirmed!==true)throw Error('Customer confirmation required');result=crm.linkFeedback(body.feedbackId,body.crmLeadId);}else if(req.method==='POST'&&pathname==='/api/crm/import/preview')result=crm.previewImport(body.rows);else if(req.method==='POST'&&pathname==='/api/crm/import/confirm')result=crm.confirmImport(body.previewId,body.decisions);else if(match){const [,kind,entityId,archive]=match;if(archive&&req.method==='POST'&&kind!=='followups')result=crm.archiveEntity(kind==='companies'?'company':kind==='contacts'?'contact':'lead',entityId);else if(entityId&&req.method==='PATCH'&&!archive&&kind!=='followups')result=kind==='companies'?crm.updateCompany(entityId,body.input):kind==='contacts'?crm.updateContact(entityId,body.input):crm.updateLead(entityId,body.input);else if(!entityId&&req.method==='POST')result=kind==='companies'?crm.createCompany(body.input):kind==='contacts'?crm.createContact(body.input):kind==='leads'?crm.createLead(body.input):crm.recordFollowUp(body.input);else return respond({error:'Not found'},404);}else return respond({error:'Not found'},404);return respond({result,crm:store.load().crm,revision:store.load().revision});}
+      if(pathname==='/api/backup/plan'||pathname.startsWith('/api/backup/prune/')){
+        if(typeof body.revision!=='string'||!body.revision)throw Error('Required workspace revision');
+        if(Object.keys(body).some(k=>!['revision','enabled','id','confirmed'].includes(k)))throw Error('Backup administration accepts no filesystem paths');
+        if(pathname==='/api/backup/plan')return respond(await setBackupPlan(store.root,body.enabled,{revision:body.revision}));
+        if(pathname.endsWith('/preview'))return respond(await previewBackupPrune(store.root,{revision:body.revision}));
+        return respond(await confirmBackupPrune(store.root,body.id,{confirmed:body.confirmed,revision:body.revision}));
+      }
+      if(pathname.startsWith('/api/backup/full/')){
+        if(typeof body.revision!=='string'||!body.revision)throw Error('Required workspace revision');
+        if(Object.keys(body).some(k=>!['revision','backupId','previewId','confirmed'].includes(k)))throw Error('Full backup only accepts local backup ID');
+        if(pathname.endsWith('/export'))return respond(await exportFullBackup(store.root,{revision:body.revision}));
+        if(pathname.endsWith('/preview')){if(typeof body.backupId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(body.backupId))throw Error('Invalid local backup ID');return respond(await previewFullRestore(store.root,path.join(store.root,'.workbench-backups/full',body.backupId),{revision:body.revision}));}
+        return respond(await confirmFullRestore(store.root,body.previewId,{confirmed:body.confirmed,revision:body.revision}));
+      }
+      const route=async()=>{
+      if(pathname.startsWith('/api/runtime/config-migration/')){if(body.workspaceId!==secretRoot.workspaceId)throw Error('Runtime workspace mismatch');if(body.revision!==store.load().revision)return respond({error:'Workspace changed'},409);if(Object.keys(body).some(key=>!['workspaceId','revision','id','confirmed'].includes(key)))throw Error('Legacy source must be selected through local CLI or server configuration');if(pathname.endsWith('/preview')){if(!options.legacyAppRoot)throw Error('Select legacy APP with local CLI first');return respond(previewLegacyConfigMigration(secretRoot,options.legacyAppRoot,{legacyPrivateBase:options.legacyPrivateBase}));}return respond(confirmLegacyConfigMigration(secretRoot,body.id,{confirmed:body.confirmed}));}
+      if((pathname==='/api/crm/query'||pathname==='/api/crm/funnel')&&req.method==='POST'){const snapshot=store.load();if(body.workspaceId!==snapshot.workspace.workspaceId)throw Error('CRM workspace mismatch');if(typeof body.revision!=='string'||body.revision!==snapshot.revision)return respond({error:'revision conflict: 资料已变化，请刷新并重新确认选择范围'},409);return respond(pathname.endsWith('/funnel')?queryCrmFunnel(snapshot as any,body,Date.now()):queryCrmPage(snapshot as any,body,Date.now()));}
+      if(pathname==='/api/crm/export'&&req.method==='POST'){if(body.workspaceId!==crm.workspaceId)throw Error('CRM workspace mismatch');const snapshot=store.load();if(body.revision!==snapshot.revision)return respond({error:'资料已变化，请刷新并重新确认导出范围'},409);if(!body.filter||typeof body.filter!=='object'||Array.isArray(body.filter))throw Error('Invalid CRM filter');if(body.scopeId!==undefined&&body.scopeId!==crmScopeId(snapshot as any,body.filter))return respond({error:'资料已变化，请刷新并重新确认导出范围'},409);const rows=selectExportRows(projectCrmRows(snapshot.crm,body.filter,Date.now()),body.mode,body.ids);const csv=exportCrmCsv(rows,body.fields);res.setHeader('Content-Disposition','attachment; filename="crm-export.csv"');return respond(Buffer.from(csv,'utf8'),200,'text/csv; charset=utf-8');}
+      if(pathname==='/api/crm/lead-records'||/^\/api\/crm\/lead-records\/[a-f0-9]{32}$/.test(pathname)){if(body.workspaceId!==crm.workspaceId)throw Error('CRM workspace mismatch');if(body.revision!==store.load().revision)return respond({error:'资料已被其他操作更新，请刷新后重试'},409);const records=new LeadRecordService(store);const result=req.method==='POST'&&pathname==='/api/crm/lead-records'?records.create(body.input):req.method==='PATCH'&&pathname!=='/api/crm/lead-records'?records.update(pathname.split('/')[4],body.input):null;if(!result)return respond({error:'Not found'},404);return respond({result,crm:body.crm==='summary'?crmSummary(store.load() as any):store.load().crm,revision:store.load().revision});}
+      if(pathname.startsWith('/api/crm/')){store.checkRevision(body.revision);if(body.workspaceId!==crm.workspaceId)throw Error('CRM workspace mismatch');let result;const match=/^\/api\/crm\/(companies|contacts|leads|followups)(?:\/([a-f0-9]{32})(?:\/(archive))?)?$/.exec(pathname);if(req.method==='POST'&&pathname==='/api/crm/members/import/preview')result=members.preview(body.rows,body.projectRef);else if(req.method==='POST'&&pathname==='/api/crm/members/import/confirm')result=members.confirm(body.previewId,body.decisions,body.confirmed);else if(req.method==='POST'&&/^\/api\/crm\/members\/[a-f0-9]{32}\/status$/.test(pathname))result=members.setActive(pathname.split('/')[4],body.active);else if(req.method==='POST'&&pathname==='/api/crm/feedback-links'){if(body.confirmed!==true)throw Error('Customer confirmation required');result=crm.linkFeedback(body.feedbackId,body.crmLeadId);}else if(req.method==='POST'&&pathname==='/api/crm/import/preview')result=crm.previewImport(body.rows);else if(req.method==='POST'&&pathname==='/api/crm/import/confirm')result=crm.confirmImport(body.previewId,body.decisions);else if(match){const [,kind,entityId,archive]=match;if(archive&&req.method==='POST'&&kind!=='followups')result=crm.archiveEntity(kind==='companies'?'company':kind==='contacts'?'contact':'lead',entityId);else if(entityId&&req.method==='PATCH'&&!archive&&kind!=='followups')result=kind==='companies'?crm.updateCompany(entityId,body.input):kind==='contacts'?crm.updateContact(entityId,body.input):crm.updateLead(entityId,body.input);else if(!entityId&&req.method==='POST')result=kind==='companies'?crm.createCompany(body.input):kind==='contacts'?crm.createContact(body.input):kind==='leads'?crm.createLead(body.input):crm.recordFollowUp(body.input);else return respond({error:'Not found'},404);}else return respond({error:'Not found'},404);return respond({result,crm:body.crm==='summary'?crmSummary(store.load() as any):store.load().crm,revision:store.load().revision});}
       const publishing=/^\/api\/content\/items\/([\w-]+)\/(prepare-publish|publish)$/.exec(pathname),refresh=/^\/api\/publisher\/attempts\/([\w-]+)\/refresh$/.exec(pathname);
-      if(publishing||refresh){store.checkRevision(body.revision);const result=refresh?await publication.refreshAttempt(refresh[1]):publishing![2]==='prepare-publish'?await publication.preparePublish(publishing![1],body.input):await publication.submitPublish(publishing![1],body.confirmationId);return respond({result,items:content.list({}),attempts:publication.listAttempts(),revision:store.load().revision});}
+      if(publishing||refresh){await readWorkspaceSnapshot(store.root,()=>store.checkRevision(body.revision));const result=refresh?await publication.refreshAttempt(refresh[1],{revision:body.revision}):publishing![2]==='prepare-publish'?await publication.preparePublish(publishing![1],body.input,{revision:body.revision}):await publication.submitPublish(publishing![1],body.confirmationId,{revision:body.revision});return readWorkspaceSnapshot(store.root,()=>respond({result,items:content.list({}),attempts:publication.listAttempts(),revision:store.load().revision}));}
       if(pathname.startsWith('/api/content/')){store.checkRevision(body.revision);let result;const match=/^\/api\/content\/items\/([\w-]+)(?:\/(approve|archive))?$/.exec(pathname);if(pathname==='/api/content/items')result=content.create(body.input);else if(pathname==='/api/content/import/preview')result=content.previewImport(body.raw,body.format);else if(pathname==='/api/content/import/confirm')result=content.confirmImport(body.previewId,body.decisions);else if(match)result=match[2]==='approve'?content.approve(match[1],body.contentHash):match[2]==='archive'?content.archive(match[1],body.expectedRevision):content.update(match[1],body.input,body.expectedRevision);else return respond({error:'Not found'},404);return respond({result,items:content.list({}),revision:store.load().revision});}
-      if(pathname==='/api/publisher/config'){if(body.revision!==store.load().revision)throw Error('Workspace changed');const existing=loadPublisherSecrets(secretRoot);savePublisherSecrets(secretRoot,{...body.config,apiKey:body.config?.apiKey===undefined?existing.apiKey:body.config.apiKey},auth);return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));}
+      if(pathname==='/api/publisher/config'){if(body.revision!==store.load().revision)throw Error('Workspace changed');const existing=readInstanceConfig(secretRoot,'publisher');savePublisherSecrets(secretRoot,{...body.config,apiKey:body.config?.apiKey===undefined?existing.apiKey??null:body.config.apiKey},auth);return respond(publisherMetadata(loadPublisherSecrets(secretRoot)));}
       if(pathname.startsWith('/api/backup/')){if(body.revision!==store.load().revision)throw Error('项目已变化，请刷新后再恢复');if(pathname==='/api/backup/online')return respond(await setOnlineBackup(store.root,body.enabled===true));return respond(restoreSnapshot(store.root,body.snapshot));}
       if(pathname==='/api/tasks')return respond({task:store.createTask(body.payload??body.input,body.revision),...store.load()});
       if(pathname==='/api/knowledge/confirm'){store.confirmKnowledge(body.path,body.contentHash,body.revision);return respond(store.load());}
       const match=/^\/api\/tasks\/([a-f0-9]{32})\/(receipts|reviews)$/.exec(pathname);
       if(match){if(match[2]==='receipts')store.applyReceipt(match[1],body.receipt??body.payload,body.revision);else store.reviewArtifact(match[1],body.contentHash,body.decision,body.evidence,body.revision,body.artifactId);return respond(store.load());}
       return respond(store.save(body));
-    } catch(e:any) { return respond({error:e.code?'文件操作失败，请检查项目目录':pathname.startsWith('/api/publisher/')||pathname.startsWith('/api/auth/')?'Private configuration request failed':e.message},e.code?500:400); }
+      };
+      const remoteMutation=/^\/api\/content\/items\/[\w-]+\/(prepare-publish|publish)$/.test(pathname)||/^\/api\/publisher\/attempts\/[\w-]+\/refresh$/.test(pathname);
+      buffering=true;
+      if(['/api/crm/export','/api/crm/query','/api/crm/funnel'].includes(pathname)){await readWorkspaceSnapshot(store.root,()=>route());}
+      else if(remoteMutation||pathname==='/api/backup/plan'||pathname.startsWith('/api/backup/prune/')){await route();buffered=await readWorkspaceSnapshot(store.root,()=>committedResult(store,buffered));}
+      else buffered=await runWorkspaceMutation(store.root,{revision:body.revision},async()=>{await route();return buffered;});
+      buffering=false;if(buffered)return respond(buffered.value,buffered.status,buffered.mime);
+    } catch(e:any) { buffering=false;if(e.message==='Workspace lease blocked'||e.message.startsWith('Lease blocked:'))return respond({error:'客户资料正被另一操作使用，请稍后重试',code:'WORKSPACE_LOCKED'},423);return respond({error:e.code?'文件操作失败，请检查项目目录':pathname.startsWith('/api/publisher/')||pathname.startsWith('/api/auth/')?'Private configuration request failed':e.message},e.code?500:/revision conflict|资料已被其他操作更新|资料已变化|Workspace changed|项目已变化/.test(e.message)?409:400); }
   });
+  let timer:ReturnType<typeof setInterval>|undefined;let busy=false;
+  server.on('listening',()=>{const tick=async()=>{if(busy)return;busy=true;try{await tickBackup(store.root,new Date().toISOString());}catch{}finally{busy=false;}};timer=setInterval(tick,60000);timer.unref();void tick();});
+  server.on('close',()=>{if(timer)clearInterval(timer);});
+  return server;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
-  const {projectRoot,port,publicMode:isPublic}=parseRuntimeOptions(process.argv.slice(2),process.env);
-  createServer(new FileWorkspace(projectRoot),port,{publicMode:isPublic,trustProxy:process.env.WORKBENCH_TRUST_PROXY==='1'}).listen(port,isPublic?'0.0.0.0':'127.0.0.1',()=>console.log('WorkBuddy workbench: http://127.0.0.1:'+port+(isPublic?' (public bind)':'')));
+  const {projectRoot,port,publicMode:isPublic,privateBase,legacyPrivateBase}=parseRuntimeOptions(process.argv.slice(2),process.env);
+  createServer(await openFileWorkspace(projectRoot),port,{publicMode:isPublic,privateBase,legacyPrivateBase,trustProxy:process.env.WORKBENCH_TRUST_PROXY==='1',trustedProxyAddresses:(process.env.WORKBENCH_TRUSTED_PROXY_ADDRESSES??'').split(',').map(x=>x.trim()).filter(Boolean)}).listen(port,isPublic?'0.0.0.0':'127.0.0.1',()=>console.log('WorkBuddy workbench: http://127.0.0.1:'+port+(isPublic?' (public bind)':'')));
 }
+
+
+
+

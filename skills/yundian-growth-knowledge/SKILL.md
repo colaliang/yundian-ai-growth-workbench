@@ -7,7 +7,7 @@ description: 在 WorkBuddy 本地客户项目创建和治理企业增长知识�
 
 以授权客户项目的 `growth-workspace/knowledge/` 为默认事实底座，WorkBuddy直接读取、整理并写回本地文件。没有云端空间、ima或乐享授权时仍可完成本地知识和获客任务；不强制上传或绑定云端。
 
-首次使用读取项目AGENTS.md/其他现有规则及客户资料，不把云店+自身企业信息复制成客户信息。调用主技能 init_workspace.py 创建缺失文件，重复运行保留已有资料。完整组织和字段规则见 [ENTERPRISE_KNOWLEDGE.md](references/ENTERPRISE_KNOWLEDGE.md)。
+首次使用读取项目AGENTS.md/其他现有规则及客户资料，不把云店+自身企业信息复制成客户信息。有实际工作台时通过 scripts/workbench.mjs --root <客户目录> --command state 初始化并读回。主技能 init_workspace.py 仅补全未受管理的纯知识文件项目；检测到 contractVersion、workbench.json、runtime 或应用绑定任务时停止，要求实际 Node 工作台入口。纯知识项目重复运行保留已有资料。完整组织和字段规则见 [ENTERPRISE_KNOWLEDGE.md](references/ENTERPRISE_KNOWLEDGE.md)。
 
 按来源整理组织、品牌、产品/服务、站点、市场、买家画像及渠道资料，维护知识索引、sources.csv 和缺口清单。一企多品牌、多站点按实际引用关联；品牌/产品线可以有不同市场与画像。客户只有最小档案时先工作，不要求一次填写全部信息。
 
@@ -32,6 +32,6 @@ description: 在 WorkBuddy 本地客户项目创建和治理企业增长知识�
 
 存在工作台任务时，核对 taskId/stage/cycleId，将真实产物保存为 Markdown，再用项目 .codebuddy/skills/yundian-growth-workbench/scripts/submit_result.mjs 的 --root、--task、--file 参数回写；脚本设为待验收，不代替客户验收。缺输入或权限时回写 needs-input/blocked 及原因。没有任务ID时独立执行并报告实际文件路径，不能虚构任务。
 
-安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。仅旧版无工作台元数据且非定时的未终结任务保留独立回写。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
+安全回写：已安装的 submit_result.mjs / submit_result.py 对应用任务通过任务记录中的 applicationRoot 定位真实工作台并调用共享回执校验。缺少该能力时停止登记并报告缺口；不写任务状态或模拟集成。旧版任务也必须通过实际工作台迁移及同一事务登记；缺少实际应用不独立修改文件。Python兼容入口调用同一Node脚本，需要Node.js22.18+。快照只覆盖 growth-workspace；外部引用文件和客户定制技能需另行保护。
 
 应用任务的已安装回写命令必须带 --application "实际工作台应用目录"（复制指令提供），并与任务位置匹配；不能把客户任务或产物指定的目录自动作为代码加载。Python 命令同样支持此参数。能力不足时停止登记。
